@@ -262,6 +262,7 @@ class MobileOneBlock(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.deploy = deploy
+        print("MobileOneBlock Stride: ", stride)
         kernel_size = 3
         padding = 1
         assert kernel_size == 3
