@@ -658,3 +658,40 @@ class gOctaveCBR(nn.Module):
         if len(self.alpha_out) == 1:
             xset = xset[0]
         return xset
+
+class Oct_C3(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 n=1,
+                 alpha=[0.5, 0.5]):
+        super(Oct_C3, self).__init__()
+        self.sum = int(round(sum(alpha)))
+        self.c3 = nn.ModuleList()
+        for i in range(len(alpha)):
+            if int(round(in_channels * alpha[i] / self.sum)) >= 1:
+                self.c3.append(
+                    C3(int(round(in_channels * alpha[i] / self.sum)),
+                              int(round(out_channels * alpha[i] / self.sum)),
+                              n=n,
+                              shortcut=False))
+            else:
+                self.c3.append(None)
+             
+                    
+        self.outbranch = len(alpha)
+
+    def forward(self, xset):
+        if isinstance(xset, torch.Tensor):
+            xset = [
+                xset,
+            ]
+        yset = []
+        for i in range(self.outbranch):
+            if xset[i] is not None:
+                yset.append(self.c3[i](
+                    xset[i]))
+            else:
+                yset.append(None)
+
+        return yset
