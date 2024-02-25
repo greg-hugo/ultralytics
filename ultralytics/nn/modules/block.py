@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock, gOctCBR, OctC3
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock, gOctCBR
 from .transformer import TransformerBlock
 
 __all__ = (
@@ -436,7 +436,7 @@ class CrossFusion(nn.Module):
                                       alpha_out=alpha_out,
                                       stride=1)
 
-        self.c3 = Oct_C3(noutput,
+        self.c3 = OctC3(noutput,
                          noutput,
                          n=n,
                          alpha=alpha_out)
@@ -444,3 +444,40 @@ class CrossFusion(nn.Module):
         output = self.conv1x1(x)
         output = self.c3(output)
         return output
+
+class OctC3(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 n=1,
+                 alpha=[0.5, 0.5]):
+        super(Oct_C3, self).__init__()
+        self.sum = int(round(sum(alpha)))
+        self.c3 = nn.ModuleList()
+        for i in range(len(alpha)):
+            if int(round(in_channels * alpha[i] / self.sum)) >= 1:
+                self.c3.append(
+                    C3(int(round(in_channels * alpha[i] / self.sum)),
+                              int(round(out_channels * alpha[i] / self.sum)),
+                              n=n,
+                              shortcut=False))
+            else:
+                self.c3.append(None)
+             
+                    
+        self.outbranch = len(alpha)
+
+    def forward(self, xset):
+        if isinstance(xset, torch.Tensor):
+            xset = [
+                xset,
+            ]
+        yset = []
+        for i in range(self.outbranch):
+            if xset[i] is not None:
+                yset.append(self.c3[i](
+                    xset[i]))
+            else:
+                yset.append(None)
+
+        return yset
