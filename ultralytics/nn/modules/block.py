@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock, gOctCBR, OctC3
 from .transformer import TransformerBlock
 
 __all__ = (
@@ -27,6 +27,7 @@ __all__ = (
     "Proto",
     "RepC3",
     "ResNetLayer",
+    "CrossFusion"
 )
 
 
@@ -402,3 +403,44 @@ class MobileOne(nn.Module):
     def forward(self, x):
         x = self.m(x)
         return x
+
+class CrossFusion(nn.Module):
+    def __init__(self,
+                 inlist,
+                 outlist,
+                 stride=1,
+                 first=False,
+                 n=1):
+        super(Cross_Fusion, self).__init__()
+        ninput = int(round(sum(inlist)))
+        noutput = int(round(sum(outlist)))
+        alpha_in = np.divide(inlist, inlist[0])
+        alpha_out = np.divide(outlist, outlist[0])
+        alpha_in = alpha_in.tolist()
+        alpha_out = alpha_out.tolist()
+        self.first = first
+        if self.first or stride == 2:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=3,
+                                      padding=1,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=stride)
+        else:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=1,
+                                      padding=0,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=1)
+
+        self.c3 = Oct_C3(noutput,
+                         noutput,
+                         n=n,
+                         alpha=alpha_out)
+    def forward(self, x):
+        output = self.conv1x1(x)
+        output = self.c3(output)
+        return output
