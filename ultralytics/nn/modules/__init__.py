@@ -53,8 +53,7 @@ from .conv import (
     MobileOneBlock,
     LightConv,
     RepConv,
-    SpatialAttention,
-    gOctaveCBR
+    SpatialAttention
 )
 from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment
 from .transformer import (
@@ -120,6 +119,5 @@ __all__ = (
     "MLP",
     "ResNetLayer",
     "OBB",
-    "gOctaveCBR",
     "CrossFusion"
 )
