@@ -782,7 +782,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             RepC3,
             MobileOneBlock,
             MobileOne,
-            CrossFusion
         ):
             if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, Focus, BottleneckCSP,
                  C3, C3TR]:
