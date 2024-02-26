@@ -784,7 +784,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             MobileOne,
             CrossFusion
         ):
-            if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP,
+            if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, Focus, BottleneckCSP,
                  C3, C3TR]:
                 c1, c2 = ch[f], args[0]
                 if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
