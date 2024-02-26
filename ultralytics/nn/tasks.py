@@ -808,6 +808,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
+        elif m is CrossFusion:
+            c1 = c2 = args[0]
+            args = [c1, c2, *args[1:]]
 
         elif m in (Detect, Segment, Pose, OBB):
             args.append([ch[x] for x in f])
