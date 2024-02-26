@@ -411,7 +411,7 @@ class CrossFusion(nn.Module):
                  stride=1,
                  first=False,
                  n=1):
-        super(Cross_Fusion, self).__init__()
+        super(CrossFusion, self).__init__()
         ninput = int(round(sum(inlist)))
         noutput = int(round(sum(outlist)))
         alpha_in = np.divide(inlist, inlist[0])
@@ -451,7 +451,7 @@ class OctC3(nn.Module):
                  out_channels,
                  n=1,
                  alpha=[0.5, 0.5]):
-        super(Oct_C3, self).__init__()
+        super(OctC3, self).__init__()
         self.sum = int(round(sum(alpha)))
         self.c3 = nn.ModuleList()
         for i in range(len(alpha)):
