@@ -37,6 +37,7 @@ from .block import (
     Proto,
     RepC3,
     ResNetLayer,
+    CrossFusion
 )
 from .conv import (
     CBAM,
@@ -53,6 +54,7 @@ from .conv import (
     LightConv,
     RepConv,
     SpatialAttention,
+    gOctaveCBR
 )
 from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment
 from .transformer import (
@@ -118,4 +120,6 @@ __all__ = (
     "MLP",
     "ResNetLayer",
     "OBB",
+    "gOctaveCBR",
+    "CrossFusion"
 )
