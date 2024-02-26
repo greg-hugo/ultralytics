@@ -24,7 +24,7 @@ __all__ = (
     "CBAM",
     "Concat",
     "RepConv",
-    "gOctCBR"
+    "gOctaveCBR"
 )
 
 
@@ -612,7 +612,6 @@ class gOctaveConv(nn.Module):
                 yset.append(None)
         del ysets
         return yset
-
 
 class gOctaveCBR(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, alpha_in=[0.5, 0.5], alpha_out=[0.5, 0.5],
