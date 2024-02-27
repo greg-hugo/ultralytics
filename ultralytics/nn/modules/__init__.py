@@ -37,7 +37,8 @@ from .block import (
     Proto,
     RepC3,
     ResNetLayer,
-    CrossFusion
+    CrossFusion,
+    RepNCSPELAN4
 )
 from .conv import (
     CBAM,
