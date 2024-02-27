@@ -28,7 +28,9 @@ __all__ = (
     "Proto",
     "RepC3",
     "ResNetLayer",
-    "CrossFusion"
+    "CrossFusion",
+    "SPPELAN",
+    "RepNCSPELAN4",
 )
 
 
