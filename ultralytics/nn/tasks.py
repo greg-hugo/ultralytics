@@ -43,7 +43,8 @@ from ultralytics.nn.modules import (
     ResNetLayer,
     RTDETRDecoder,
     Segment,
-    CrossFusion
+    CrossFusion,
+    RepNCSPELAN4
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -782,9 +783,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             RepC3,
             MobileOneBlock,
             MobileOne,
+            RepNCSPELAN4
         ):
             if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, Focus, BottleneckCSP,
-                 C3, C3TR, C2f, SPPF, MobileOne, MobileOneBlock]:
+                 C3, C3TR, C2f, SPPF, MobileOne, MobileOneBlock, RepNCSPELAN4]:
                 c1, c2 = ch[f], args[0]
                 if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                     c2 = make_divisible(min(c2, max_channels) * width, 8)
