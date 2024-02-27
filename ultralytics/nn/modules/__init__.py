@@ -38,7 +38,8 @@ from .block import (
     RepC3,
     ResNetLayer,
     CrossFusion,
-    RepNCSPELAN4
+    RepNCSPELAN4,
+    SPPELAN
 )
 from .conv import (
     CBAM,
@@ -120,5 +121,7 @@ __all__ = (
     "MLP",
     "ResNetLayer",
     "OBB",
-    "CrossFusion"
+    "CrossFusion",
+    "SPPELAN",
+    "RepNCSPELAN4"
 )
