@@ -783,10 +783,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             RepC3,
             MobileOneBlock,
             MobileOne,
-            RepNCSPELAN4
+            RepNCSPELAN4,
+            SPPELAN
         ):
             if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, Focus, BottleneckCSP,
-                 C3, C3TR, C2f, SPPF, MobileOne, MobileOneBlock, RepNCSPELAN4]:
+                 C3, C3TR, C2f, SPPF, MobileOne, MobileOneBlock, RepNCSPELAN4, SPPELAN]:
                 c1, c2 = ch[f], args[0]
                 if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                     c2 = make_divisible(min(c2, max_channels) * width, 8)
