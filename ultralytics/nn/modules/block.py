@@ -458,7 +458,7 @@ class OctC3(nn.Module):
         for i in range(len(alpha)):
             if int(round(in_channels * alpha[i] / self.sum)) >= 1:
                 self.c3.append(
-                    C2f(int(round(in_channels * alpha[i] / self.sum)),
+                    C3(int(round(in_channels * alpha[i] / self.sum)),
                               int(round(out_channels * alpha[i] / self.sum)),
                               n=n,
                               shortcut=False))
