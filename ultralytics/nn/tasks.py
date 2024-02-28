@@ -783,12 +783,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C3x,
             RepC3,
             MobileOneBlock,
-            MobileOne,
             RepNCSPELAN4,
             SPPELAN
         ):
             if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, DWConv, Focus, BottleneckCSP,
-                 C3, C3TR, C2f, SPPF, MobileOne, MobileOneBlock, RepNCSPELAN4, SPPELAN]:
+                 C3, C3TR, C2f, SPPF, MobileOneBlock, RepNCSPELAN4, SPPELAN]:
                 c1, c2 = ch[f], args[0]
                 if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                     c2 = make_divisible(min(c2, max_channels) * width, 8)
@@ -817,7 +816,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             print(args, ch)
             c1 = c2 = args[0]
             args = [c1, c2, *args[1:]]
-
+        elif m is MobileOne:
+            c1, c2 = ch[f], args[0]
+            c2 = make_divisible(c2 * width, 8)
+            args = [c1, c2, n, *args[1:]]
         elif m in (Detect, Segment, Pose, OBB):
             if isinstance(f, list):
                 args.append([ch[x] for x in f])
