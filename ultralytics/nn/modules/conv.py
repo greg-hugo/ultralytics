@@ -271,7 +271,7 @@ class MobileOneBlock(nn.Module):
         self.k = k
         padding_11 = padding - kernel_size // 2
         self.nonlinearity = nn.ReLU()
-
+        print("Deploy: ", self.deploy)
         if use_se:
             # self.se = SEBlock(out_channels, internal_neurons=out_channels // 16)
             ...
