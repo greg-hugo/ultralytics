@@ -398,7 +398,7 @@ class ResNetLayer(nn.Module):
 
 class MobileOne(nn.Module):
     def __init__(
-        self, in_channels, out_channels, n, k, stride=1, dilation=1, padding_mode="zeros", deploy=False, use_se=False
+        self, in_channels, out_channels, n, k, stride=1, deploy=False, padding_mode="zeros", dilation=1, use_se=False
     ):
         super().__init__()
         print(locals())
