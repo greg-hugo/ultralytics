@@ -271,7 +271,6 @@ class MobileOneBlock(nn.Module):
         self.k = k
         padding_11 = padding - kernel_size // 2
         self.nonlinearity = nn.ReLU()
-        print("Deploy: ", self.deploy)
         if use_se:
             # self.se = SEBlock(out_channels, internal_neurons=out_channels // 16)
             ...
@@ -304,7 +303,8 @@ class MobileOneBlock(nn.Module):
             self.pw_bn_layer = nn.BatchNorm2d(in_channels) if out_channels == in_channels and stride == 1 else None
             for k_idx in range(k):
                 setattr(self, f"pw_1x1_{k_idx}", PointWiseConv(in_channels, out_channels))
-
+        print(self.parameters())
+    
     def forward(self, inputs):
         if self.deploy:
             x = self.dw_reparam(inputs)
