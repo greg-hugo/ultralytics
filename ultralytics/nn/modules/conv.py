@@ -341,6 +341,8 @@ class MobileOneBlock(nn.Module):
         x = self.nonlinearity(x)
         return x
 
+    def reparameterize(self):
+        print("Test")
 
 class RepConv(nn.Module):
     """
