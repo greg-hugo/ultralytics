@@ -401,7 +401,6 @@ class MobileOne(nn.Module):
         self, in_channels, out_channels, n, k, stride=1, dilation=1, deploy=False, padding_mode="zeros", use_se=False
     ):
         super().__init__()
-        print(locals())
         self.m = nn.Sequential(*[MobileOneBlock(in_channels, out_channels, k=k, stride=stride, deploy=deploy) for _ in range(n)])
 
     def forward(self, x):
