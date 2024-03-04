@@ -790,12 +790,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                  C3, C3TR, C2f, SPPF, MobileOneBlock, RepNCSPELAN4, SPPELAN]:
                 c1, c2 = ch[f], args[0]
                 if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
-                    print("c2: ", c2)
-                    print("nc: ", nc)
                     c2 = make_divisible(min(c2, max_channels) * width, 8)
-                    print("new c2: ", c2)
 
                 args = [c1, c2, *args[1:]]
+                if m is MobileOneBlock:
+                    print(args)
                 if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3):
                     args.insert(2, n)  # number of repeats
                     n = 1
@@ -823,6 +822,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1, c2 = ch[f], args[0]
             c2 = make_divisible(c2 * width, 8)
             args = [c1, c2, n, *args[1:]]
+            print(args)
         elif m in (Detect, Segment, Pose, OBB):
             if isinstance(f, list):
                 args.append([ch[x] for x in f])
