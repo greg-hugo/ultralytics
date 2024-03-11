@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from typing import Optional, List, Tuple
+from ultralytics.utils.torch_utils import make_divisible
 
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock, gOctaveCBR
 from .transformer import TransformerBlock
@@ -397,14 +399,106 @@ class ResNetLayer(nn.Module):
 
 
 class MobileOne(nn.Module):
-    def __init__(
-        self, in_channels, out_channels, n, k, stride=1, dilation=1, deploy=False, padding_mode="zeros", use_se=False
-    ):
-        super().__init__()
-        self.m = nn.Sequential(*[MobileOneBlock(in_channels, out_channels, k=k, stride=stride, deploy=deploy) for _ in range(n)])
+    """ MobileOne Model
 
-    def forward(self, x):
-        x = self.m(x)
+        Pytorch implementation of `An Improved One millisecond Mobile Backbone` -
+        https://arxiv.org/pdf/2206.04040.pdf
+    """
+    def __init__(self,
+                 num_blocks_per_stage: List[int] = [2, 8, 10, 1],
+                 num_classes: int = 80,
+                 width_multiplier: float = 0.25,
+                 inference_mode: bool = False,
+                 use_se: bool = False,
+                 num_conv_branches: int = 4,
+                 max_channel: int = 1024) -> None:
+        """ Construct MobileOne model.
+
+        :param num_blocks_per_stage: List of number of blocks per stage.
+        :param num_classes: Number of classes in the dataset.
+        :param width_multipliers: List of width multiplier for blocks in a stage.
+        :param inference_mode: If True, instantiates model in inference mode.
+        :param use_se: Whether to use SE-ReLU activations.
+        :param num_conv_branches: Number of linear conv branches.
+        """
+        super().__init__()
+        self.inference_mode = inference_mode
+        self.in_planes = min(128, make_divisible(min(128, max_channel) * width_multiplier, 8))
+        self.use_se = use_se
+        self.num_conv_branches = num_conv_branches
+
+        # Build stages
+        self.stage0 = MobileOneBlock(in_channels=3, out_channels=self.in_planes,
+                                     kernel_size=3, stride=2, padding=1,
+                                     inference_mode=self.inference_mode)
+        self.cur_layer_idx = 1
+        self.stage1 = self._make_stage(make_divisible(min(128, max_channel) * width_multiplier, 8), num_blocks_per_stage[0],
+                                       num_se_blocks=0)
+        self.stage2 = self._make_stage(make_divisible(min(256, max_channel) * width_multiplier, 8), num_blocks_per_stage[1],
+                                       num_se_blocks=0)
+        self.stage3 = self._make_stage(make_divisible(min(512, max_channel) * width_multiplier, 8), num_blocks_per_stage[2],
+                                       num_se_blocks=int(num_blocks_per_stage[2] // 2) if use_se else 0)
+        self.stage4 = self._make_stage(make_divisible(min(1024, max_channel) * width_multiplier, 8), num_blocks_per_stage[3],
+                                       num_se_blocks=num_blocks_per_stage[3] if use_se else 0)
+        self.gap = nn.AdaptiveAvgPool2d(output_size=1)
+        self.linear = nn.Linear(make_divisible(min(1024, max_channel) * width_multiplier, 8), num_classes)
+
+    def _make_stage(self,
+                    planes: int,
+                    num_blocks: int,
+                    num_se_blocks: int) -> nn.Sequential:
+        """ Build a stage of MobileOne model.
+
+        :param planes: Number of output channels.
+        :param num_blocks: Number of blocks in this stage.
+        :param num_se_blocks: Number of SE blocks in this stage.
+        :return: A stage of MobileOne model.
+        """
+        # Get strides for all layers
+        strides = [2] + [1]*(num_blocks-1)
+        blocks = []
+        for ix, stride in enumerate(strides):
+            use_se = False
+            if num_se_blocks > num_blocks:
+                raise ValueError("Number of SE blocks cannot "
+                                 "exceed number of layers.")
+            if ix >= (num_blocks - num_se_blocks):
+                use_se = True
+
+            # Depthwise conv
+            blocks.append(MobileOneBlock(in_channels=self.in_planes,
+                                         out_channels=self.in_planes,
+                                         kernel_size=3,
+                                         stride=stride,
+                                         padding=1,
+                                         groups=self.in_planes,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches))
+            # Pointwise conv
+            blocks.append(MobileOneBlock(in_channels=self.in_planes,
+                                         out_channels=planes,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         groups=1,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches))
+            self.in_planes = planes
+            self.cur_layer_idx += 1
+        return nn.Sequential(*blocks)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """ Apply forward pass. """
+        x = self.stage0(x)
+        x = self.stage1(x)
+        x = self.stage2(x)
+        x = self.stage3(x)
+        x = self.stage4(x)
+        x = self.gap(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
         return x
 
 class CrossFusion(nn.Module):

@@ -817,11 +817,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             print(args, ch)
             c1 = c2 = args[0]
             args = [c1, c2, *args[1:]]
-        elif m is MobileOne:
-            c1, c2 = ch[f], args[0]
-            c2 = make_divisible(c2 * width, 8)
-            args = [c1, c2, n, *args[1:]]
-            print(args)
+        # elif m is MobileOne:
+        #     c1, c2 = ch[f], args[0]
+        #     c2 = make_divisible(c2 * width, 8)
+        #     args = [c1, c2, n, *args[1:]]
+        #     print(args)
         elif m in (Detect, Segment, Pose, OBB):
             if isinstance(f, list):
                 args.append([ch[x] for x in f])
