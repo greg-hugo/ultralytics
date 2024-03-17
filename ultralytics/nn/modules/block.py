@@ -422,7 +422,6 @@ class MobileOne(nn.Module):
         """
         super().__init__()
         self.inference_mode = inference_mode
-        self.use_se = use_se
         self.num_conv_branches = num_conv_branches
 
         blocks = list()
