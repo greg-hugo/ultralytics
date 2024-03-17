@@ -422,15 +422,13 @@ class MobileOne(nn.Module):
         """
         super().__init__()
         self.inference_mode = inference_mode
-        self.in_channel =in_channel
-        self.out_channel = out_channel 
         self.use_se = use_se
         self.num_conv_branches = num_conv_branches
 
         blocks = list()
         # Build stages
-        blocks.append(MobileOneBlock(in_channels=self.in_planes,
-                                         out_channels=self.in_planes,
+        blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=out_channel,
                                          kernel_size=3,
                                          stride=stride,
                                          padding=1,
@@ -439,8 +437,8 @@ class MobileOne(nn.Module):
                                          use_se=use_se,
                                          num_conv_branches=self.num_conv_branches))
         # Pointwise conv
-        blocks.append(MobileOneBlock(in_channels=self.in_channel,
-                                         out_channels=self.out_channel,
+        blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=out_channel,
                                          kernel_size=1,
                                          stride=1,
                                          padding=0,
