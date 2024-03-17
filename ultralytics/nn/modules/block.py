@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Optional, List, Tuple
-from ultralytics.utils.torch_utils import make_divisible
 
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock, gOctaveCBR
 from .transformer import TransformerBlock
@@ -33,6 +32,7 @@ __all__ = (
     "CrossFusion",
     "SPPELAN",
     "RepNCSPELAN4",
+    "MobileOne"
 )
 
 
@@ -405,13 +405,12 @@ class MobileOne(nn.Module):
         https://arxiv.org/pdf/2206.04040.pdf
     """
     def __init__(self,
-                 num_blocks_per_stage: List[int] = [2, 8, 10, 1],
-                 num_classes: int = 80,
-                 width_multiplier: float = 0.25,
+                 in_channel: int,
+                 out_channel: int,
+                 stride: int = 1,
                  inference_mode: bool = False,
                  use_se: bool = False,
-                 num_conv_branches: int = 4,
-                 max_channel: int = 1024) -> None:
+                 num_conv_branches: int = 4) -> None:
         """ Construct MobileOne model.
 
         :param num_blocks_per_stage: List of number of blocks per stage.
@@ -423,50 +422,14 @@ class MobileOne(nn.Module):
         """
         super().__init__()
         self.inference_mode = inference_mode
-        self.in_planes = min(128, make_divisible(min(128, max_channel) * width_multiplier, 8))
+        self.in_channel =in_channel
+        self.out_channel = out_channel 
         self.use_se = use_se
         self.num_conv_branches = num_conv_branches
 
+        blocks = list()
         # Build stages
-        self.stage0 = MobileOneBlock(in_channels=3, out_channels=self.in_planes,
-                                     kernel_size=3, stride=2, padding=1,
-                                     inference_mode=self.inference_mode)
-        self.cur_layer_idx = 1
-        self.stage1 = self._make_stage(make_divisible(min(128, max_channel) * width_multiplier, 8), num_blocks_per_stage[0],
-                                       num_se_blocks=0)
-        self.stage2 = self._make_stage(make_divisible(min(256, max_channel) * width_multiplier, 8), num_blocks_per_stage[1],
-                                       num_se_blocks=0)
-        self.stage3 = self._make_stage(make_divisible(min(512, max_channel) * width_multiplier, 8), num_blocks_per_stage[2],
-                                       num_se_blocks=int(num_blocks_per_stage[2] // 2) if use_se else 0)
-        self.stage4 = self._make_stage(make_divisible(min(1024, max_channel) * width_multiplier, 8), num_blocks_per_stage[3],
-                                       num_se_blocks=num_blocks_per_stage[3] if use_se else 0)
-        self.gap = nn.AdaptiveAvgPool2d(output_size=1)
-        self.linear = nn.Linear(make_divisible(min(1024, max_channel) * width_multiplier, 8), num_classes)
-
-    def _make_stage(self,
-                    planes: int,
-                    num_blocks: int,
-                    num_se_blocks: int) -> nn.Sequential:
-        """ Build a stage of MobileOne model.
-
-        :param planes: Number of output channels.
-        :param num_blocks: Number of blocks in this stage.
-        :param num_se_blocks: Number of SE blocks in this stage.
-        :return: A stage of MobileOne model.
-        """
-        # Get strides for all layers
-        strides = [2] + [1]*(num_blocks-1)
-        blocks = []
-        for ix, stride in enumerate(strides):
-            use_se = False
-            if num_se_blocks > num_blocks:
-                raise ValueError("Number of SE blocks cannot "
-                                 "exceed number of layers.")
-            if ix >= (num_blocks - num_se_blocks):
-                use_se = True
-
-            # Depthwise conv
-            blocks.append(MobileOneBlock(in_channels=self.in_planes,
+        blocks.append(MobileOneBlock(in_channels=self.in_planes,
                                          out_channels=self.in_planes,
                                          kernel_size=3,
                                          stride=stride,
@@ -475,9 +438,9 @@ class MobileOne(nn.Module):
                                          inference_mode=self.inference_mode,
                                          use_se=use_se,
                                          num_conv_branches=self.num_conv_branches))
-            # Pointwise conv
-            blocks.append(MobileOneBlock(in_channels=self.in_planes,
-                                         out_channels=planes,
+        # Pointwise conv
+        blocks.append(MobileOneBlock(in_channels=self.in_channel,
+                                         out_channels=self.out_channel,
                                          kernel_size=1,
                                          stride=1,
                                          padding=0,
@@ -485,20 +448,13 @@ class MobileOne(nn.Module):
                                          inference_mode=self.inference_mode,
                                          use_se=use_se,
                                          num_conv_branches=self.num_conv_branches))
-            self.in_planes = planes
-            self.cur_layer_idx += 1
-        return nn.Sequential(*blocks)
+        
+        self.depthwise_separable = nn.Sequential(*blocks)
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """ Apply forward pass. """
-        x = self.stage0(x)
-        x = self.stage1(x)
-        x = self.stage2(x)
-        x = self.stage3(x)
-        x = self.stage4(x)
-        x = self.gap(x)
-        x = x.view(x.size(0), -1)
-        x = self.linear(x)
+        x = self.depthwise_separable(x)
         return x
 
 class CrossFusion(nn.Module):
