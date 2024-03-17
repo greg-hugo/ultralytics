@@ -428,11 +428,11 @@ class MobileOne(nn.Module):
         blocks = list()
         # Build stages
         blocks.append(MobileOneBlock(in_channels=in_channel,
-                                         out_channels=out_channel,
+                                         out_channels=in_channel,
                                          kernel_size=3,
                                          stride=stride,
                                          padding=1,
-                                         groups=self.in_planes,
+                                         groups=in_channel,
                                          inference_mode=self.inference_mode,
                                          use_se=use_se,
                                          num_conv_branches=self.num_conv_branches))
