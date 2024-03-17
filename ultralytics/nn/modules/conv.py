@@ -317,7 +317,7 @@ class MobileOneBlock(nn.Module):
         else:
             # Re-parameterizable skip connection
             self.rbr_skip = nn.BatchNorm2d(num_features=in_channels) \
-                if out_channels == in_channels and stride == 1 else None
+                if out_channels == in_channels
 
             # Re-parameterizable conv branches
             rbr_conv = list()
