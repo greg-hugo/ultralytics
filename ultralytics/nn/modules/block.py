@@ -32,7 +32,8 @@ __all__ = (
     "CrossFusion",
     "SPPELAN",
     "RepNCSPELAN4",
-    "MobileOne"
+    "MobileOne",
+    "CrossFusionMobileOne",
 )
 
 
@@ -520,6 +521,46 @@ class CrossFusion(nn.Module):
         output = self.c3(output)
         return output
 
+
+class CrossFusionMobileOne(nn.Module):
+    def __init__(self,
+                 inlist,
+                 outlist,
+                 stride=1,
+                 first=False,
+                 n=1):
+        super(CrossFusionMobileOne, self).__init__()
+        ninput = int(round(sum(inlist)))
+        noutput = int(round(sum(outlist)))
+        alpha_in = np.divide(inlist, inlist[0])
+        alpha_out = np.divide(outlist, outlist[0])
+        alpha_in = alpha_in.tolist()
+        alpha_out = alpha_out.tolist()
+        self.first = first
+        if self.first or stride == 2:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=3,
+                                      padding=1,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=stride)
+        else:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=1,
+                                      padding=0,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=1)
+
+        self.mobileone = OctMobileOne(noutput,
+                         noutput,
+                         alpha=alpha_out)
+    def forward(self, x):
+        output = self.conv1x1(x)
+        output = self.mobileone(output)
+        return output
 class OctC3(nn.Module):
     def __init__(self,
                  in_channels,
@@ -557,6 +598,39 @@ class OctC3(nn.Module):
 
         return yset
 
+class OctMobileOne(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 alpha=[0.5, 0.5]):
+        super(OctMobileOne, self).__init__()
+        self.sum = int(round(sum(alpha)))
+        self.mobileone = nn.ModuleList()
+        for i in range(len(alpha)):
+            if int(round(in_channels * alpha[i] / self.sum)) >= 1:
+                self.mobileone.append(
+                    MobileOne(int(round(in_channels * alpha[i] / self.sum)),
+                              int(round(out_channels * alpha[i] / self.sum))))
+            else:
+                self.mobileone.append(None)
+             
+                    
+        self.outbranch = len(alpha)
+
+    def forward(self, xset):
+        if isinstance(xset, torch.Tensor):
+            xset = [
+                xset,
+            ]
+        yset = []
+        for i in range(self.outbranch):
+            if xset[i] is not None:
+                yset.append(self.mobileone[i](
+                    xset[i]))
+            else:
+                yset.append(None)
+
+        return yset
 class RepNCSP(nn.Module):
     # CSP Bottleneck with 3 convolutions
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion

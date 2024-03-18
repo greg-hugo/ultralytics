@@ -39,7 +39,8 @@ from .block import (
     ResNetLayer,
     CrossFusion,
     RepNCSPELAN4,
-    SPPELAN
+    SPPELAN,
+    CrossFusionMobileOne
 )
 from .conv import (
     CBAM,
