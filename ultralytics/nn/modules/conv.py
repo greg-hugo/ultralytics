@@ -353,6 +353,7 @@ class MobileOneBlock(nn.Module):
         # Other branches
         out = scale_out + identity_out
         for ix in range(self.num_conv_branches):
+            print(self.rbr_conv[ix](x).shape)
             out += self.rbr_conv[ix](x)
 
         return self.activation(self.se(out))
