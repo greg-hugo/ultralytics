@@ -184,8 +184,8 @@ class SPPFMobileOne(nn.Module):
         """
         super().__init__()
         c_ = c1 // 2  # hidden channels
-        self.cv1 = MobileOneBlock(c1, c_, 1, 1)
-        self.cv2 = MobileOneBlock(c_ * 4, c2, 1, 1)
+        self.cv1 = MobileOne(c1, c_, 1, 1)
+        self.cv2 = MobileOne(c_ * 4, c2, 1, 1)
         self.m = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
 
     def forward(self, x):
@@ -455,7 +455,9 @@ class MobileOne(nn.Module):
     def __init__(self,
                  in_channel: int,
                  out_channel: int,
+                 kernel: int = 1,
                  stride: int = 1,
+                 act: bool = True,
                  inference_mode: bool = False,
                  use_se: bool = False,
                  num_conv_branches: int = 4) -> None:
@@ -471,18 +473,20 @@ class MobileOne(nn.Module):
         super().__init__()
         self.inference_mode = inference_mode
         self.num_conv_branches = num_conv_branches
+        self.act = act
 
         blocks = list()
         # Build stages
         blocks.append(MobileOneBlock(in_channels=in_channel,
                                          out_channels=in_channel,
-                                         kernel_size=3,
+                                         kernel_size=kernel,
                                          stride=stride,
                                          padding=1,
                                          groups=in_channel,
                                          inference_mode=self.inference_mode,
                                          use_se=use_se,
-                                         num_conv_branches=self.num_conv_branches))
+                                         num_conv_branches=self.num_conv_branches,
+                                         act=self.act))
         # Pointwise conv
         blocks.append(MobileOneBlock(in_channels=in_channel,
                                          out_channels=out_channel,
@@ -492,7 +496,8 @@ class MobileOne(nn.Module):
                                          groups=1,
                                          inference_mode=self.inference_mode,
                                          use_se=use_se,
-                                         num_conv_branches=self.num_conv_branches))
+                                         num_conv_branches=self.num_conv_branches,
+                                         act=self.act))
         
         self.depthwise_separable = nn.Sequential(*blocks)
 

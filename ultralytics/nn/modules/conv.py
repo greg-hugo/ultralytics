@@ -275,7 +275,8 @@ class MobileOneBlock(nn.Module):
                  groups: int = 1,
                  inference_mode: bool = False,
                  use_se: bool = False,
-                 num_conv_branches: int = 4) -> None:
+                 num_conv_branches: int = 1,
+                 act: bool = True) -> None:
         """ Construct a MobileOneBlock module.
 
         :param in_channels: Number of channels in the input.
@@ -303,7 +304,7 @@ class MobileOneBlock(nn.Module):
             self.se = SEBlock(out_channels)
         else:
             self.se = nn.Identity()
-        self.activation = nn.ReLU()
+        self.activation = nn.ReLU() if act else nn.SiLU()
 
         if inference_mode:
             self.reparam_conv = nn.Conv2d(in_channels=in_channels,
