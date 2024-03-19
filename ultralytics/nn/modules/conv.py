@@ -275,7 +275,7 @@ class MobileOneBlock(nn.Module):
                  groups: int = 1,
                  inference_mode: bool = False,
                  use_se: bool = False,
-                 num_conv_branches: int = 1) -> None:
+                 num_conv_branches: int = 4) -> None:
         """ Construct a MobileOneBlock module.
 
         :param in_channels: Number of channels in the input.
