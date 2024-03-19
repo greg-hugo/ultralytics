@@ -489,10 +489,10 @@ class MobileOneStack(nn.Module):
     def __init__(self,
                  in_channel: int,
                  out_channel: int,
-                 num_blocks: int = 2,
+                 num_blocks: int = 1,
                  inference_mode: bool = False,
                  use_se: bool = False,
-                 num_conv_branches: int = 4) -> None:
+                 num_conv_branches: int = 1) -> None:
         """ Construct MobileOne model.
 
         :param num_blocks_per_stage: List of number of blocks per stage.
