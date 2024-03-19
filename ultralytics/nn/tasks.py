@@ -35,6 +35,7 @@ from ultralytics.nn.modules import (
     GhostConv,
     MobileOneBlock,
     MobileOne,
+    MobileOneStack,
     HGBlock,
     HGStem,
     Pose,
@@ -785,6 +786,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             RepC3,
             MobileOneBlock,
             MobileOne,
+            MobileOneStack,
             RepNCSPELAN4,
             SPPELAN
         ):

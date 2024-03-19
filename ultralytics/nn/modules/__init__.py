@@ -30,6 +30,7 @@ from .block import (
     C2f,
     C3Ghost,
     MobileOne,
+    MobileOneStack,
     C3x,
     GhostBottleneck,
     HGBlock,
