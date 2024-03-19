@@ -355,6 +355,7 @@ class MobileOneBlock(nn.Module):
         for ix in range(self.num_conv_branches):
             print(self.rbr_conv[ix](x).shape)
             out += self.rbr_conv[ix](x)
+        print("------end------")
 
         return self.activation(self.se(out))
 
