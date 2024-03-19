@@ -41,6 +41,7 @@ from .block import (
     CrossFusion,
     RepNCSPELAN4,
     SPPELAN,
+    SPPFMobileOne,
     CrossFusionMobileOne
 )
 from .conv import (
