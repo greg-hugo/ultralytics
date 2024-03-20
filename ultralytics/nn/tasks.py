@@ -48,7 +48,8 @@ from ultralytics.nn.modules import (
     CrossFusionMobileOne,
     RepNCSPELAN4,
     SPPELAN,
-    SPPFMobileOne
+    SPPFMobileOne,
+    C2fMobileOne,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -778,6 +779,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C1,
             C2,
             C2f,
+            C2fMobileOne,
             C3,
             C3TR,
             C3Ghost,
@@ -797,7 +799,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
 
             args = [c1, c2, *args[1:]]
-            if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3):
+            if m in (BottleneckCSP, C1, C2, C2f, C2fMobileOne, C3, C3TR, C3Ghost, C3x, RepC3):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:

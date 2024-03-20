@@ -42,7 +42,8 @@ from .block import (
     RepNCSPELAN4,
     SPPELAN,
     SPPFMobileOne,
-    CrossFusionMobileOne
+    CrossFusionMobileOne,
+    C2fMobileOne
 )
 from .conv import (
     CBAM,
