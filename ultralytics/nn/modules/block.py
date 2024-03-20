@@ -174,7 +174,7 @@ class SPPF(nn.Module):
         return self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1))
 
 class SPPFMobileOne(nn.Module):
-    """Spatial Pyramid Pooling - Fast (SPPF) layer for YOLOv5 by Glenn Jocher."""
+    """SPPF Combined with MobileOne"""
 
     def __init__(self, c1, c2, k=5):
         """
@@ -184,9 +184,9 @@ class SPPFMobileOne(nn.Module):
         """
         super().__init__()
         c_ = c1 // 2  # hidden channels
-        print(c1, c2)
-        self.cv1 = MobileOne(c1, c_, 1, 2)
-        self.cv2 = MobileOne(c_ * 4, c2, 1, 2)
+        self.cv1 = MobileOne(c1, c_, 1, 1)
+        print("here")
+        self.cv2 = MobileOne(c_ * 4, c2, 1, 1)
         self.m = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
 
     def forward(self, x):
