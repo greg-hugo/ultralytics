@@ -177,7 +177,7 @@ class SPPF(nn.Module):
 class SPPFMobileOne(nn.Module):
     """SPPF Combined with MobileOne"""
 
-    def __init__(self, c1, c2, k=5):
+    def __init__(self, c1, c2, k=5, act=True):
         """
         Initializes the SPPF layer with given input/output channels and kernel size.
 
@@ -185,8 +185,8 @@ class SPPFMobileOne(nn.Module):
         """
         super().__init__()
         c_ = c1 // 2  # hidden channels
-        self.cv1 = MobileOne(c1, c_, 1, 1)
-        self.cv2 = MobileOne(c_ * 4, c2, 1, 1)
+        self.cv1 = MobileOne(c1, c_, 1, 1, act=act)
+        self.cv2 = MobileOne(c_ * 4, c2, 1, 1, act=act)
         self.m = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
 
     def forward(self, x):
