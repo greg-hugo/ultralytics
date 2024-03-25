@@ -271,12 +271,12 @@ class MobileOneBlock(nn.Module):
                  kernel_size: int,
                  stride: int = 1,
                  padding: int = 0,
+                 act: bool = True,
                  dilation: int = 1,
                  groups: int = 1,
                  inference_mode: bool = False,
                  use_se: bool = False,
-                 num_conv_branches: int = 1,
-                 act: bool = True) -> None:
+                 num_conv_branches: int = 1) -> None:
         """ Construct a MobileOneBlock module.
 
         :param in_channels: Number of channels in the input.
