@@ -390,26 +390,23 @@ def intersect_dicts(da, db, exclude=()):
     return {k: v for k, v in da.items() if k in db and all(x not in k for x in exclude) and v.shape == db[k].shape}
 
 def check_last_module_layers(csd, self_state_dict):
-    # Get the last keys from both dictionaries
-    csd_last_key = next(iter(csd.keys()), None)
-    self_last_key = next(iter(self_state_dict.keys()), None)
-    
-    if csd_last_key is None or self_last_key is None:
-        # If either dictionary is empty, return False
+    # Extract module numbers from keys
+    csd_module_numbers = set(int(k.split('.')[1]) for k in csd.keys() if k.startswith('model.'))
+    self_module_numbers = set(int(k.split('.')[1]) for k in self_state_dict.keys() if k.startswith('model.'))
+
+    # Check if there are any module numbers
+    if not csd_module_numbers or not self_module_numbers:
         return False
 
-    csd_keys = csd_last_key.split('.')
-    self_keys = self_last_key.split('.')
-    
-    # Extract the module layers
-    csd_layers = '.'.join(csd_keys[2:])
-    self_layers = '.'.join(self_keys[2:])
-    
-    # Compare the module layers
-    if csd_layers == self_layers:
-        return True
-    else:
-        return False
+    # Get the maximum module number
+    max_module_number = max(max(csd_module_numbers), max(self_module_numbers))
+
+    # Extract all layers for the maximum module number
+    csd_last_module_layers = set('.'.join(k.split('.')[2:]) for k in csd.keys() if k.startswith(f'model.{max_module_number}.'))
+    self_last_module_layers = set('.'.join(k.split('.')[2:]) for k in self_state_dict.keys() if k.startswith(f'model.{max_module_number}.'))
+
+    # Compare the layers
+    return csd_last_module_layers == self_last_module_layers
 
 def is_parallel(model):
     """Returns True if model is of type DP or DDP."""
