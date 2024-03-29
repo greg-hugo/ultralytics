@@ -248,8 +248,8 @@ class BaseModel(nn.Module):
         """
         model = weights["model"] if isinstance(weights, dict) else weights  # torchvision models are not dicts
         csd = model.float().state_dict()  # checkpoint state_dict as FP32
+        print(csd.keys())
         csd = intersect_dicts(csd, self.state_dict())  # intersect
-        print(csd)
         self.load_state_dict(csd, strict=False)  # load
         if verbose:
             LOGGER.info(f"Transferred {len(csd)}/{len(self.model.state_dict())} items from pretrained weights")
