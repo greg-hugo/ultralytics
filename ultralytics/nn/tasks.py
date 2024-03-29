@@ -250,8 +250,12 @@ class BaseModel(nn.Module):
         model = weights["model"] if isinstance(weights, dict) else weights  # torchvision models are not dicts
         csd = model.float().state_dict()  # checkpoint state_dict as FP32
         new_csd = intersect_dicts(csd, self.state_dict())  # intersect
-        if check_last_module_layers(csd, self.state_dict()):
-            print("new_csd is empty or the last module numbers match.")
+        for key in csd.keys():
+            if key.startswith('model.22'):
+                print(key)
+        for key in self.state_dict().keys():
+            if key.startswith('model.12'):
+                print(key)
         self.load_state_dict(new_csd, strict=False)  # load
         if verbose:
             LOGGER.info(f"Transferred {len(new_csd)}/{len(self.model.state_dict())} items from pretrained weights")
