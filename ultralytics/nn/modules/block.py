@@ -268,7 +268,7 @@ class C2fMobileOne(nn.Module):
         self.c = int(c2 * e)  # hidden channels
         self.cv1 = MobileOne(c1, 2 * self.c, 1, 1)
         self.cv2 = MobileOne((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
-        self.m = nn.ModuleList(MobileOne(self.c, self.c, 3, 2, use_se=True) for _ in range(n))
+        self.m = nn.ModuleList(MobileOne(self.c, self.c, 3, 1, use_se=True) for _ in range(n))
 
     def forward(self, x):
         """Forward pass through C2f layer."""
