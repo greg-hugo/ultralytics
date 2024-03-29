@@ -64,6 +64,7 @@ from ultralytics.utils.torch_utils import (
     model_info,
     scale_img,
     time_sync,
+    check_last_module_number
 )
 
 try:
@@ -248,12 +249,12 @@ class BaseModel(nn.Module):
         """
         model = weights["model"] if isinstance(weights, dict) else weights  # torchvision models are not dicts
         csd = model.float().state_dict()  # checkpoint state_dict as FP32
-        print(csd.keys())
-        csd = intersect_dicts(csd, self.state_dict())  # intersect
-        print(csd.keys())
-        self.load_state_dict(csd, strict=False)  # load
+        new_csd = intersect_dicts(csd, self.state_dict())  # intersect
+        if check_last_module_number(csd, self.state_dict()):
+            print("new_csd is empty or the last module numbers match.")
+        self.load_state_dict(new_csd, strict=False)  # load
         if verbose:
-            LOGGER.info(f"Transferred {len(csd)}/{len(self.model.state_dict())} items from pretrained weights")
+            LOGGER.info(f"Transferred {len(new_csd)}/{len(self.model.state_dict())} items from pretrained weights")
 
     def loss(self, batch, preds=None):
         """

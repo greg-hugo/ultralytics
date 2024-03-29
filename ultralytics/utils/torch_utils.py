@@ -389,6 +389,20 @@ def intersect_dicts(da, db, exclude=()):
     """Returns a dictionary of intersecting keys with matching shapes, excluding 'exclude' keys, using da values."""
     return {k: v for k, v in da.items() if k in db and all(x not in k for x in exclude) and v.shape == db[k].shape}
 
+def check_last_module_number(csd, self_state_dict):
+    # Get the last keys from both dictionaries
+    csd_keys = list(csd.keys())[-1].split('.')
+    self_keys = list(self_state_dict.keys())[-1].split('.')
+    
+    # Extract the module numbers
+    csd_module_num = int(csd_keys[1]) if csd_keys[0] == 'model' else None
+    self_module_num = int(self_keys[1]) if self_keys[0] == 'model' else None
+    
+    # Compare the module numbers
+    if csd_module_num == self_module_num:
+        return True
+    else:
+        return False
 
 def is_parallel(model):
     """Returns True if model is of type DP or DDP."""
