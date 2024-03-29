@@ -64,7 +64,7 @@ from ultralytics.utils.torch_utils import (
     model_info,
     scale_img,
     time_sync,
-    check_last_module_number
+    check_last_module_layers
 )
 
 try:
@@ -250,7 +250,7 @@ class BaseModel(nn.Module):
         model = weights["model"] if isinstance(weights, dict) else weights  # torchvision models are not dicts
         csd = model.float().state_dict()  # checkpoint state_dict as FP32
         new_csd = intersect_dicts(csd, self.state_dict())  # intersect
-        if check_last_module_number(csd, self.state_dict()):
+        if check_last_module_layers(csd, self.state_dict()):
             print("new_csd is empty or the last module numbers match.")
         self.load_state_dict(new_csd, strict=False)  # load
         if verbose:

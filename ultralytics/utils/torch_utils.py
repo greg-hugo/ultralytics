@@ -389,17 +389,24 @@ def intersect_dicts(da, db, exclude=()):
     """Returns a dictionary of intersecting keys with matching shapes, excluding 'exclude' keys, using da values."""
     return {k: v for k, v in da.items() if k in db and all(x not in k for x in exclude) and v.shape == db[k].shape}
 
-def check_last_module_number(csd, self_state_dict):
+def check_last_module_layers(csd, self_state_dict):
     # Get the last keys from both dictionaries
-    csd_keys = list(csd.keys())[-1].split('.')
-    self_keys = list(self_state_dict.keys())[-1].split('.')
+    csd_last_key = next(iter(csd.keys()), None)
+    self_last_key = next(iter(self_state_dict.keys()), None)
     
-    # Extract the module numbers
-    csd_module_num = int(csd_keys[1]) if csd_keys[0] == 'model' else None
-    self_module_num = int(self_keys[1]) if self_keys[0] == 'model' else None
+    if csd_last_key is None or self_last_key is None:
+        # If either dictionary is empty, return False
+        return False
+
+    csd_keys = csd_last_key.split('.')
+    self_keys = self_last_key.split('.')
     
-    # Compare the module numbers
-    if csd_module_num == self_module_num:
+    # Extract the module layers
+    csd_layers = '.'.join(csd_keys[2:])
+    self_layers = '.'.join(self_keys[2:])
+    
+    # Compare the module layers
+    if csd_layers == self_layers:
         return True
     else:
         return False
