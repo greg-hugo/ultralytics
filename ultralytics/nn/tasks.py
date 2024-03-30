@@ -253,7 +253,7 @@ class BaseModel(nn.Module):
         
         csd_last = [key.split('.')[2:] for key in csd.keys() if key.startswith('model.22')]
         self_last = [key.split('.')[2:] for key in self.state_dict().keys() if key.startswith('model.12')]
-        if not new_csd and csd_last == self_last:
+        if csd_last == self_last:
             for module in csd_last:
                 # Get the module number
                 module_number = '12'
