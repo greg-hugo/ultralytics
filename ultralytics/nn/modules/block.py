@@ -616,7 +616,8 @@ class CrossFusionMobileOne(nn.Module):
                  outlist,
                  stride=1,
                  first=False,
-                 n=1):
+                 n=1,
+                 mobileone_act=True):
         super(CrossFusionMobileOne, self).__init__()
         ninput = int(round(sum(inlist)))
         noutput = int(round(sum(outlist)))
@@ -642,9 +643,12 @@ class CrossFusionMobileOne(nn.Module):
                                       alpha_out=alpha_out,
                                       stride=1)
 
-        self.mobileone = OctMobileOne(noutput,
-                         noutput,
-                         alpha=alpha_out)
+        self.mobileone = OctMobileOne(
+                            noutput,
+                            noutput,
+                            alpha=alpha_out,
+                            mobileone_act=mobileone_act
+                         )
     def forward(self, x):
         output = self.conv1x1(x)
         output = self.mobileone(output)
@@ -690,15 +694,19 @@ class OctMobileOne(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
-                 alpha=[0.5, 0.5]):
+                 alpha=[0.5, 0.5],
+                 mobileone_act=True):
         super(OctMobileOne, self).__init__()
         self.sum = int(round(sum(alpha)))
         self.mobileone = nn.ModuleList()
         for i in range(len(alpha)):
             if int(round(in_channels * alpha[i] / self.sum)) >= 1:
                 self.mobileone.append(
-                    MobileOne(int(round(in_channels * alpha[i] / self.sum)),
-                              int(round(out_channels * alpha[i] / self.sum))))
+                    MobileOne(
+                        int(round(in_channels * alpha[i] / self.sum)),
+                        int(round(out_channels * alpha[i] / self.sum)),
+                        act=mobileone_act
+                    ))
             else:
                 self.mobileone.append(None)
              
