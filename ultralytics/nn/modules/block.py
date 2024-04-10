@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 from typing import Optional, List, Tuple
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock, gOctaveCBR
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, MobileOneBlock, gOctaveCBR, autopad
 from .transformer import TransformerBlock
 
 __all__ = (
@@ -21,6 +21,10 @@ __all__ = (
     "C3",
     "C2f",
     "C2fMobileOne",
+    "C2fAttn",
+    "ImagePoolingAttn",
+    "ContrastiveHead",
+    "BNContrastiveHead",
     "C3x",
     "C3TR",
     "C3Ghost",
@@ -35,6 +39,12 @@ __all__ = (
     "RepNCSPELAN4",
     "MobileOne",
     "CrossFusionMobileOne",
+    "RepNCSPELAN4",
+    "ADown",
+    "SPPELAN",
+    "CBFuse",
+    "CBLinear",
+    "Silence",
 )
 
 
@@ -55,7 +65,7 @@ class DFL(nn.Module):
 
     def forward(self, x):
         """Applies a transformer layer on input tensor 'x' and returns a tensor."""
-        b, c, a = x.shape  # batch, channels, anchors
+        b, _, a = x.shape  # batch, channels, anchors
         return self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a)
         # return self.conv(x.view(b, self.c1, 4, a).softmax(1)).view(b, 4, a)
 
@@ -169,10 +179,9 @@ class SPPF(nn.Module):
 
     def forward(self, x):
         """Forward pass through Ghost Convolution block."""
-        x = self.cv1(x)
-        y1 = self.m(x)
-        y2 = self.m(y1)
-        return self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1))
+        y = [self.cv1(x)]
+        y.extend(self.m(y[-1]) for _ in range(3))
+        return self.cv2(torch.cat(y, 1))
 
 class SPPFMobileOne(nn.Module):
     """SPPF Combined with MobileOne"""
@@ -191,10 +200,9 @@ class SPPFMobileOne(nn.Module):
 
     def forward(self, x):
         """Forward pass through Ghost Convolution block."""
-        x = self.cv1(x)
-        y1 = self.m(x)
-        y2 = self.m(y1)
-        return self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1))
+        y = [self.cv1(x)]
+        y.extend(self.m(y[-1]) for _ in range(3))
+        return self.cv2(torch.cat(y, 1))
 
 
 class C1(nn.Module):
@@ -447,451 +455,286 @@ class ResNetLayer(nn.Module):
         return self.layer(x)
 
 
-class MobileOne(nn.Module):
-    """ MobileOne Model
+class MaxSigmoidAttnBlock(nn.Module):
+    """Max Sigmoid attention block."""
 
-        Pytorch implementation of `An Improved One millisecond Mobile Backbone` -
-        https://arxiv.org/pdf/2206.04040.pdf
-    """
-    def __init__(self,
-                 in_channel: int,
-                 out_channel: int,
-                 kernel: int = 1,
-                 stride: int = 1,
-                 act: bool = True,
-                 inference_mode: bool = False,
-                 use_se: bool = False,
-                 num_conv_branches: int = 4) -> None:
-        """ Construct MobileOne model.
+    def __init__(self, c1, c2, nh=1, ec=128, gc=512, scale=False):
+        """Initializes MaxSigmoidAttnBlock with specified arguments."""
+        super().__init__()
+        self.nh = nh
+        self.hc = c2 // nh
+        self.ec = Conv(c1, ec, k=1, act=False) if c1 != ec else None
+        self.gl = nn.Linear(gc, ec)
+        self.bias = nn.Parameter(torch.zeros(nh))
+        self.proj_conv = Conv(c1, c2, k=3, s=1, act=False)
+        self.scale = nn.Parameter(torch.ones(1, nh, 1, 1)) if scale else 1.0
 
-        :param num_blocks_per_stage: List of number of blocks per stage.
-        :param num_classes: Number of classes in the dataset.
-        :param width_multipliers: List of width multiplier for blocks in a stage.
-        :param inference_mode: If True, instantiates model in inference mode.
-        :param use_se: Whether to use SE-ReLU activations.
-        :param num_conv_branches: Number of linear conv branches.
+    def forward(self, x, guide):
+        """Forward process."""
+        bs, _, h, w = x.shape
+
+        guide = self.gl(guide)
+        guide = guide.view(bs, -1, self.nh, self.hc)
+        embed = self.ec(x) if self.ec is not None else x
+        embed = embed.view(bs, self.nh, self.hc, h, w)
+
+        aw = torch.einsum("bmchw,bnmc->bmhwn", embed, guide)
+        aw = aw.max(dim=-1)[0]
+        aw = aw / (self.hc**0.5)
+        aw = aw + self.bias[None, :, None, None]
+        aw = aw.sigmoid() * self.scale
+
+        x = self.proj_conv(x)
+        x = x.view(bs, self.nh, -1, h, w)
+        x = x * aw.unsqueeze(2)
+        return x.view(bs, -1, h, w)
+
+
+class C2fAttn(nn.Module):
+    """C2f module with an additional attn module."""
+
+    def __init__(self, c1, c2, n=1, ec=128, nh=1, gc=512, shortcut=False, g=1, e=0.5):
+        """Initialize CSP bottleneck layer with two convolutions with arguments ch_in, ch_out, number, shortcut, groups,
+        expansion.
         """
         super().__init__()
-        self.inference_mode = inference_mode
-        self.num_conv_branches = num_conv_branches
-        self.act = act
+        self.c = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((3 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
+        self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
+        self.attn = MaxSigmoidAttnBlock(self.c, self.c, gc=gc, ec=ec, nh=nh)
 
-        blocks = list()
-        # Build stages
-        blocks.append(MobileOneBlock(in_channels=in_channel,
-                                         out_channels=in_channel,
-                                         kernel_size=kernel,
-                                         stride=stride,
-                                         padding=kernel//2,
-                                         groups=in_channel,
-                                         inference_mode=self.inference_mode,
-                                         use_se=use_se,
-                                         num_conv_branches=self.num_conv_branches,
-                                         act=self.act))
-        # Pointwise conv
-        blocks.append(MobileOneBlock(in_channels=in_channel,
-                                         out_channels=out_channel,
-                                         kernel_size=1,
-                                         stride=1,
-                                         padding=0,
-                                         groups=1,
-                                         inference_mode=self.inference_mode,
-                                         use_se=use_se,
-                                         num_conv_branches=self.num_conv_branches,
-                                         act=self.act))
-        
-        self.depthwise_separable = nn.Sequential(*blocks)
+    def forward(self, x, guide):
+        """Forward pass through C2f layer."""
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        y.append(self.attn(y[-1], guide))
+        return self.cv2(torch.cat(y, 1))
+
+    def forward_split(self, x, guide):
+        """Forward pass using split() instead of chunk()."""
+        y = list(self.cv1(x).split((self.c, self.c), 1))
+        y.extend(m(y[-1]) for m in self.m)
+        y.append(self.attn(y[-1], guide))
+        return self.cv2(torch.cat(y, 1))
 
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """ Apply forward pass. """
-        x = self.depthwise_separable(x)
-        return x
+class ImagePoolingAttn(nn.Module):
+    """ImagePoolingAttn: Enhance the text embeddings with image-aware information."""
 
-class MobileOneStack(nn.Module):
-    """ MobileOne Model
+    def __init__(self, ec=256, ch=(), ct=512, nh=8, k=3, scale=False):
+        """Initializes ImagePoolingAttn with specified arguments."""
+        super().__init__()
 
-        Pytorch implementation of `An Improved One millisecond Mobile Backbone` -
-        https://arxiv.org/pdf/2206.04040.pdf
+        nf = len(ch)
+        self.query = nn.Sequential(nn.LayerNorm(ct), nn.Linear(ct, ec))
+        self.key = nn.Sequential(nn.LayerNorm(ec), nn.Linear(ec, ec))
+        self.value = nn.Sequential(nn.LayerNorm(ec), nn.Linear(ec, ec))
+        self.proj = nn.Linear(ec, ct)
+        self.scale = nn.Parameter(torch.tensor([0.0]), requires_grad=True) if scale else 1.0
+        self.projections = nn.ModuleList([nn.Conv2d(in_channels, ec, kernel_size=1) for in_channels in ch])
+        self.im_pools = nn.ModuleList([nn.AdaptiveMaxPool2d((k, k)) for _ in range(nf)])
+        self.ec = ec
+        self.nh = nh
+        self.nf = nf
+        self.hc = ec // nh
+        self.k = k
+
+    def forward(self, x, text):
+        """Executes attention mechanism on input tensor x and guide tensor."""
+        bs = x[0].shape[0]
+        assert len(x) == self.nf
+        num_patches = self.k**2
+        x = [pool(proj(x)).view(bs, -1, num_patches) for (x, proj, pool) in zip(x, self.projections, self.im_pools)]
+        x = torch.cat(x, dim=-1).transpose(1, 2)
+        q = self.query(text)
+        k = self.key(x)
+        v = self.value(x)
+
+        # q = q.reshape(1, text.shape[1], self.nh, self.hc).repeat(bs, 1, 1, 1)
+        q = q.reshape(bs, -1, self.nh, self.hc)
+        k = k.reshape(bs, -1, self.nh, self.hc)
+        v = v.reshape(bs, -1, self.nh, self.hc)
+
+        aw = torch.einsum("bnmc,bkmc->bmnk", q, k)
+        aw = aw / (self.hc**0.5)
+        aw = F.softmax(aw, dim=-1)
+
+        x = torch.einsum("bmnk,bkmc->bnmc", aw, v)
+        x = self.proj(x.reshape(bs, -1, self.ec))
+        return x * self.scale + text
+
+
+class ContrastiveHead(nn.Module):
+    """Contrastive Head for YOLO-World compute the region-text scores according to the similarity between image and text
+    features.
     """
-    def __init__(self,
-                 in_channel: int,
-                 out_channel: int,
-                 num_blocks: int = 1,
-                 inference_mode: bool = False,
-                 use_se: bool = False,
-                 num_conv_branches: int = 1) -> None:
-        """ Construct MobileOne model.
 
-        :param num_blocks_per_stage: List of number of blocks per stage.
-        :param num_classes: Number of classes in the dataset.
-        :param width_multipliers: List of width multiplier for blocks in a stage.
-        :param inference_mode: If True, instantiates model in inference mode.
-        :param use_se: Whether to use SE-ReLU activations.
-        :param num_conv_branches: Number of linear conv branches.
+    def __init__(self):
+        """Initializes ContrastiveHead with specified region-text similarity parameters."""
+        super().__init__()
+        # NOTE: use -10.0 to keep the init cls loss consistency with other losses
+        self.bias = nn.Parameter(torch.tensor([-10.0]))
+        self.logit_scale = nn.Parameter(torch.ones([]) * torch.tensor(1 / 0.07).log())
+
+    def forward(self, x, w):
+        """Forward function of contrastive learning."""
+        x = F.normalize(x, dim=1, p=2)
+        w = F.normalize(w, dim=-1, p=2)
+        x = torch.einsum("bchw,bkc->bkhw", x, w)
+        return x * self.logit_scale.exp() + self.bias
+
+
+class BNContrastiveHead(nn.Module):
+    """
+    Batch Norm Contrastive Head for YOLO-World using batch norm instead of l2-normalization.
+
+    Args:
+        embed_dims (int): Embed dimensions of text and image features.
+    """
+
+    def __init__(self, embed_dims: int):
+        """Initialize ContrastiveHead with region-text similarity parameters."""
+        super().__init__()
+        self.norm = nn.BatchNorm2d(embed_dims)
+        # NOTE: use -10.0 to keep the init cls loss consistency with other losses
+        self.bias = nn.Parameter(torch.tensor([-10.0]))
+        # use -1.0 is more stable
+        self.logit_scale = nn.Parameter(-1.0 * torch.ones([]))
+
+    def forward(self, x, w):
+        """Forward function of contrastive learning."""
+        x = self.norm(x)
+        w = F.normalize(w, dim=-1, p=2)
+        x = torch.einsum("bchw,bkc->bkhw", x, w)
+        return x * self.logit_scale.exp() + self.bias
+
+
+class RepBottleneck(Bottleneck):
+    """Rep bottleneck."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
+        """Initializes a RepBottleneck module with customizable in/out channels, shortcut option, groups and expansion
+        ratio.
         """
-        super().__init__()
-        self.inference_mode = inference_mode
-        self.num_conv_branches = num_conv_branches
-
-        strides = [2] + [1]*(num_blocks-1)
-        blocks = list()
-        
-        for s in strides:
-            # Depthwise conv
-            blocks.append(MobileOneBlock(in_channels=in_channel,
-                                         out_channels=in_channel,
-                                         kernel_size=3,
-                                         stride=s,
-                                         padding=1,
-                                         groups=in_channel,
-                                         inference_mode=self.inference_mode,
-                                         use_se=use_se,
-                                         num_conv_branches=self.num_conv_branches))
-            # Pointwise conv
-            blocks.append(MobileOneBlock(in_channels=in_channel,
-                                         out_channels=out_channel,
-                                         kernel_size=1,
-                                         stride=1,
-                                         padding=0,
-                                         groups=1,
-                                         inference_mode=self.inference_mode,
-                                         use_se=use_se,
-                                         num_conv_branches=self.num_conv_branches))
-            in_channel = out_channel
-        
-        self.depthwise_separable = nn.Sequential(*blocks)
-
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """ Apply forward pass. """
-        x = self.depthwise_separable(x)
-        return x
-
-class CrossFusion(nn.Module):
-    def __init__(self,
-                 inlist,
-                 outlist,
-                 stride=1,
-                 first=False,
-                 n=1):
-        super(CrossFusion, self).__init__()
-        ninput = int(round(sum(inlist)))
-        noutput = int(round(sum(outlist)))
-        alpha_in = np.divide(inlist, inlist[0])
-        alpha_out = np.divide(outlist, outlist[0])
-        alpha_in = alpha_in.tolist()
-        alpha_out = alpha_out.tolist()
-        self.first = first
-        if self.first or stride == 2:
-            self.conv1x1 = gOctaveCBR(ninput,
-                                      noutput,
-                                      kernel_size=3,
-                                      padding=1,
-                                      alpha_in=alpha_in,
-                                      alpha_out=alpha_out,
-                                      stride=stride)
-        else:
-            self.conv1x1 = gOctaveCBR(ninput,
-                                      noutput,
-                                      kernel_size=1,
-                                      padding=0,
-                                      alpha_in=alpha_in,
-                                      alpha_out=alpha_out,
-                                      stride=1)
-
-        self.c3 = OctC3(noutput,
-                         noutput,
-                         n=n,
-                         alpha=alpha_out)
-    def forward(self, x):
-        output = self.conv1x1(x)
-        output = self.c3(output)
-        return output
-
-
-class CrossFusionMobileOne(nn.Module):
-    def __init__(self,
-                 inlist,
-                 outlist,
-                 stride=1,
-                 first=False,
-                 n=1,
-                 mobileone_act=True):
-        super(CrossFusionMobileOne, self).__init__()
-        ninput = int(round(sum(inlist)))
-        noutput = int(round(sum(outlist)))
-        alpha_in = np.divide(inlist, inlist[0])
-        alpha_out = np.divide(outlist, outlist[0])
-        alpha_in = alpha_in.tolist()
-        alpha_out = alpha_out.tolist()
-        self.first = first
-        if self.first or stride == 2:
-            self.conv1x1 = gOctaveCBR(ninput,
-                                      noutput,
-                                      kernel_size=3,
-                                      padding=1,
-                                      alpha_in=alpha_in,
-                                      alpha_out=alpha_out,
-                                      stride=stride)
-        else:
-            self.conv1x1 = gOctaveCBR(ninput,
-                                      noutput,
-                                      kernel_size=1,
-                                      padding=0,
-                                      alpha_in=alpha_in,
-                                      alpha_out=alpha_out,
-                                      stride=1)
-
-        self.mobileone = OctMobileOne(
-                            noutput,
-                            noutput,
-                            alpha=alpha_out,
-                            mobileone_act=mobileone_act
-                         )
-    def forward(self, x):
-        output = self.conv1x1(x)
-        output = self.mobileone(output)
-        return output
-class OctC3(nn.Module):
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 n=1,
-                 alpha=[0.5, 0.5]):
-        super(OctC3, self).__init__()
-        self.sum = int(round(sum(alpha)))
-        self.c3 = nn.ModuleList()
-        for i in range(len(alpha)):
-            if int(round(in_channels * alpha[i] / self.sum)) >= 1:
-                self.c3.append(
-                    C3(int(round(in_channels * alpha[i] / self.sum)),
-                              int(round(out_channels * alpha[i] / self.sum)),
-                              n=n,
-                              shortcut=False))
-            else:
-                self.c3.append(None)
-             
-                    
-        self.outbranch = len(alpha)
-
-    def forward(self, xset):
-        if isinstance(xset, torch.Tensor):
-            xset = [
-                xset,
-            ]
-        yset = []
-        for i in range(self.outbranch):
-            if xset[i] is not None:
-                yset.append(self.c3[i](
-                    xset[i]))
-            else:
-                yset.append(None)
-
-        return yset
-
-class OctMobileOne(nn.Module):
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 alpha=[0.5, 0.5],
-                 mobileone_act=True):
-        super(OctMobileOne, self).__init__()
-        self.sum = int(round(sum(alpha)))
-        self.mobileone = nn.ModuleList()
-        for i in range(len(alpha)):
-            if int(round(in_channels * alpha[i] / self.sum)) >= 1:
-                self.mobileone.append(
-                    MobileOne(
-                        int(round(in_channels * alpha[i] / self.sum)),
-                        int(round(out_channels * alpha[i] / self.sum)),
-                        act=mobileone_act
-                    ))
-            else:
-                self.mobileone.append(None)
-             
-                    
-        self.outbranch = len(alpha)
-
-    def forward(self, xset):
-        if isinstance(xset, torch.Tensor):
-            xset = [
-                xset,
-            ]
-        yset = []
-        for i in range(self.outbranch):
-            if xset[i] is not None:
-                yset.append(self.mobileone[i](
-                    xset[i]))
-            else:
-                yset.append(None)
-
-        return yset
-class RepNCSP(nn.Module):
-    # CSP Bottleneck with 3 convolutions
-    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
-        super().__init__()
+        super().__init__(c1, c2, shortcut, g, k, e)
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1)
-        self.cv2 = Conv(c1, c_, 1, 1)
-        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
-        self.m = nn.Sequential(*(RepNBottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+        self.cv1 = RepConv(c1, c_, k[0], 1)
 
-    def forward(self, x):
-        return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), 1))
+
+class RepCSP(C3):
+    """Rep CSP Bottleneck with 3 convolutions."""
+
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
+        """Initializes RepCSP layer with given channels, repetitions, shortcut, groups and expansion ratio."""
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(RepBottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+
 
 class RepNCSPELAN4(nn.Module):
-    # csp-elan
-    def __init__(self, c1, c2, c3, c4, c5=1):  # ch_in, ch_out, number, shortcut, groups, expansion
+    """CSP-ELAN."""
+
+    def __init__(self, c1, c2, c3, c4, n=1):
+        """Initializes CSP-ELAN layer with specified channel sizes, repetitions, and convolutions."""
         super().__init__()
-        self.c = c3//2
+        self.c = c3 // 2
         self.cv1 = Conv(c1, c3, 1, 1)
-        self.cv2 = nn.Sequential(RepNCSP(c3//2, c4, c5), Conv(c4, c4, 3, 1))
-        self.cv3 = nn.Sequential(RepNCSP(c4, c4, c5), Conv(c4, c4, 3, 1))
-        self.cv4 = Conv(c3+(2*c4), c2, 1, 1)
+        self.cv2 = nn.Sequential(RepCSP(c3 // 2, c4, n), Conv(c4, c4, 3, 1))
+        self.cv3 = nn.Sequential(RepCSP(c4, c4, n), Conv(c4, c4, 3, 1))
+        self.cv4 = Conv(c3 + (2 * c4), c2, 1, 1)
 
     def forward(self, x):
+        """Forward pass through RepNCSPELAN4 layer."""
         y = list(self.cv1(x).chunk(2, 1))
         y.extend((m(y[-1])) for m in [self.cv2, self.cv3])
         return self.cv4(torch.cat(y, 1))
 
     def forward_split(self, x):
+        """Forward pass using split() instead of chunk()."""
         y = list(self.cv1(x).split((self.c, self.c), 1))
         y.extend(m(y[-1]) for m in [self.cv2, self.cv3])
         return self.cv4(torch.cat(y, 1))
 
-class SP(nn.Module):
-    def __init__(self, k=3, s=1):
-        super(SP, self).__init__()
-        self.m = nn.MaxPool2d(kernel_size=k, stride=s, padding=k // 2)
 
-    def forward(self, x):
-        return self.m(x)
+class ADown(nn.Module):
+    """ADown."""
 
-class RepNBottleneck(nn.Module):
-    # Standard bottleneck
-    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, kernels, groups, expand
+    def __init__(self, c1, c2):
+        """Initializes ADown module with convolution layers to downsample input from channels c1 to c2."""
         super().__init__()
-        c_ = int(c2 * e)  # hidden channels
-        self.cv1 = RepConvN(c1, c_, k[0], 1)
-        self.cv2 = Conv(c_, c2, k[1], 1, g=g)
-        self.add = shortcut and c1 == c2
+        self.c = c2 // 2
+        self.cv1 = Conv(c1 // 2, self.c, 3, 2, 1)
+        self.cv2 = Conv(c1 // 2, self.c, 1, 1, 0)
 
     def forward(self, x):
-        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+        """Forward pass through ADown layer."""
+        x = torch.nn.functional.avg_pool2d(x, 2, 1, 0, False, True)
+        x1, x2 = x.chunk(2, 1)
+        x1 = self.cv1(x1)
+        x2 = torch.nn.functional.max_pool2d(x2, 3, 2, 1)
+        x2 = self.cv2(x2)
+        return torch.cat((x1, x2), 1)
+
 
 class SPPELAN(nn.Module):
-    # spp-elan
-    def __init__(self, c1, c2, c3):  # ch_in, ch_out, number, shortcut, groups, expansion
+    """SPP-ELAN."""
+
+    def __init__(self, c1, c2, c3, k=5):
+        """Initializes SPP-ELAN block with convolution and max pooling layers for spatial pyramid pooling."""
         super().__init__()
         self.c = c3
         self.cv1 = Conv(c1, c3, 1, 1)
-        self.cv2 = SP(5)
-        self.cv3 = SP(5)
-        self.cv4 = SP(5)
-        self.cv5 = Conv(4*c3, c2, 1, 1)
+        self.cv2 = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
+        self.cv3 = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
+        self.cv4 = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
+        self.cv5 = Conv(4 * c3, c2, 1, 1)
 
     def forward(self, x):
+        """Forward pass through SPPELAN layer."""
         y = [self.cv1(x)]
         y.extend(m(y[-1]) for m in [self.cv2, self.cv3, self.cv4])
         return self.cv5(torch.cat(y, 1))
 
-class RepConvN(nn.Module):
-    """RepConv is a basic rep-style block, including training and deploy status
-    This code is based on https://github.com/DingXiaoH/RepVGG/blob/main/repvgg.py
-    """
-    default_act = nn.SiLU()  # default activation
 
-    def __init__(self, c1, c2, k=3, s=1, p=1, g=1, d=1, act=True, bn=False, deploy=False):
-        super().__init__()
-        assert k == 3 and p == 1
-        self.g = g
-        self.c1 = c1
-        self.c2 = c2
-        self.act = self.default_act if act is True else act if isinstance(act, nn.Module) else nn.Identity()
+class Silence(nn.Module):
+    """Silence."""
 
-        self.bn = None
-        self.conv1 = Conv(c1, c2, k, s, p=p, g=g, act=False)
-        self.conv2 = Conv(c1, c2, 1, s, p=(p - k // 2), g=g, act=False)
-
-    def forward_fuse(self, x):
-        """Forward process"""
-        return self.act(self.conv(x))
+    def __init__(self):
+        """Initializes the Silence module."""
+        super(Silence, self).__init__()
 
     def forward(self, x):
-        """Forward process"""
-        id_out = 0 if self.bn is None else self.bn(x)
-        return self.act(self.conv1(x) + self.conv2(x) + id_out)
+        """Forward pass through Silence layer."""
+        return x
 
-    def get_equivalent_kernel_bias(self):
-        kernel3x3, bias3x3 = self._fuse_bn_tensor(self.conv1)
-        kernel1x1, bias1x1 = self._fuse_bn_tensor(self.conv2)
-        kernelid, biasid = self._fuse_bn_tensor(self.bn)
-        return kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1) + kernelid, bias3x3 + bias1x1 + biasid
 
-    def _avg_to_3x3_tensor(self, avgp):
-        channels = self.c1
-        groups = self.g
-        kernel_size = avgp.kernel_size
-        input_dim = channels // groups
-        k = torch.zeros((channels, input_dim, kernel_size, kernel_size))
-        k[np.arange(channels), np.tile(np.arange(input_dim), groups), :, :] = 1.0 / kernel_size ** 2
-        return k
+class CBLinear(nn.Module):
+    """CBLinear."""
 
-    def _pad_1x1_to_3x3_tensor(self, kernel1x1):
-        if kernel1x1 is None:
-            return 0
-        else:
-            return torch.nn.functional.pad(kernel1x1, [1, 1, 1, 1])
+    def __init__(self, c1, c2s, k=1, s=1, p=None, g=1):
+        """Initializes the CBLinear module, passing inputs unchanged."""
+        super(CBLinear, self).__init__()
+        self.c2s = c2s
+        self.conv = nn.Conv2d(c1, sum(c2s), k, s, autopad(k, p), groups=g, bias=True)
 
-    def _fuse_bn_tensor(self, branch):
-        if branch is None:
-            return 0, 0
-        if isinstance(branch, Conv):
-            kernel = branch.conv.weight
-            running_mean = branch.bn.running_mean
-            running_var = branch.bn.running_var
-            gamma = branch.bn.weight
-            beta = branch.bn.bias
-            eps = branch.bn.eps
-        elif isinstance(branch, nn.BatchNorm2d):
-            if not hasattr(self, 'id_tensor'):
-                input_dim = self.c1 // self.g
-                kernel_value = np.zeros((self.c1, input_dim, 3, 3), dtype=np.float32)
-                for i in range(self.c1):
-                    kernel_value[i, i % input_dim, 1, 1] = 1
-                self.id_tensor = torch.from_numpy(kernel_value).to(branch.weight.device)
-            kernel = self.id_tensor
-            running_mean = branch.running_mean
-            running_var = branch.running_var
-            gamma = branch.weight
-            beta = branch.bias
-            eps = branch.eps
-        std = (running_var + eps).sqrt()
-        t = (gamma / std).reshape(-1, 1, 1, 1)
-        return kernel * t, beta - running_mean * gamma / std
+    def forward(self, x):
+        """Forward pass through CBLinear layer."""
+        outs = self.conv(x).split(self.c2s, dim=1)
+        return outs
 
-    def fuse_convs(self):
-        if hasattr(self, 'conv'):
-            return
-        kernel, bias = self.get_equivalent_kernel_bias()
-        self.conv = nn.Conv2d(in_channels=self.conv1.conv.in_channels,
-                              out_channels=self.conv1.conv.out_channels,
-                              kernel_size=self.conv1.conv.kernel_size,
-                              stride=self.conv1.conv.stride,
-                              padding=self.conv1.conv.padding,
-                              dilation=self.conv1.conv.dilation,
-                              groups=self.conv1.conv.groups,
-                              bias=True).requires_grad_(False)
-        self.conv.weight.data = kernel
-        self.conv.bias.data = bias
-        for para in self.parameters():
-            para.detach_()
-        self.__delattr__('conv1')
-        self.__delattr__('conv2')
-        if hasattr(self, 'nm'):
-            self.__delattr__('nm')
-        if hasattr(self, 'bn'):
-            self.__delattr__('bn')
-        if hasattr(self, 'id_tensor'):
-            self.__delattr__('id_tensor')
+
+class CBFuse(nn.Module):
+    """CBFuse."""
+
+    def __init__(self, idx):
+        """Initializes CBFuse module with layer index for selective feature fusion."""
+        super(CBFuse, self).__init__()
+        self.idx = idx
+
+    def forward(self, xs):
+        """Forward pass through CBFuse layer."""
+        target_size = xs[-1].shape[2:]
+        res = [F.interpolate(x[self.idx[i]], size=target_size, mode="nearest") for i, x in enumerate(xs[:-1])]
+        out = torch.sum(torch.stack(res + xs[-1:]), dim=0)
+        return out

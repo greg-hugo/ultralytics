@@ -24,26 +24,36 @@ from .block import (
     C3TR,
     DFL,
     SPP,
+    SPPELAN,
     SPPF,
+    ADown,
+    BNContrastiveHead,
     Bottleneck,
     BottleneckCSP,
     C2f,
+    C2fAttn,
     C3Ghost,
     MobileOne,
     MobileOneStack,
     C3x,
+    CBFuse,
+    CBLinear,
+    ContrastiveHead,
     GhostBottleneck,
     HGBlock,
     HGStem,
+    ImagePoolingAttn,
     Proto,
     RepC3,
+    RepNCSPELAN4,
     ResNetLayer,
     CrossFusion,
     RepNCSPELAN4,
     SPPELAN,
     SPPFMobileOne,
     CrossFusionMobileOne,
-    C2fMobileOne
+    C2fMobileOne,
+    Silence,
 )
 from .conv import (
     CBAM,
@@ -61,7 +71,7 @@ from .conv import (
     RepConv,
     SpatialAttention
 )
-from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment
+from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect
 from .transformer import (
     AIFI,
     MLP,
@@ -104,6 +114,7 @@ __all__ = (
     "C2",
     "C3",
     "C2f",
+    "C2fAttn",
     "C3x",
     "C3TR",
     "C3Ghost",
@@ -128,4 +139,14 @@ __all__ = (
     "CrossFusion",
     "SPPELAN",
     "RepNCSPELAN4"
+    "WorldDetect",
+    "ImagePoolingAttn",
+    "ContrastiveHead",
+    "BNContrastiveHead",
+    "RepNCSPELAN4",
+    "ADown",
+    "SPPELAN",
+    "CBFuse",
+    "CBLinear",
+    "Silence",
 )
