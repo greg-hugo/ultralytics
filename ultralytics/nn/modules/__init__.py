@@ -138,11 +138,9 @@ __all__ = (
     "OBB",
     "CrossFusion",
     "SPPELAN",
-    "RepNCSPELAN4"
+    "RepNCSPELAN4",
     "WorldDetect",
     "ImagePoolingAttn",
-    "ContrastiveHead",
-    "BNContrastiveHead",
     "RepNCSPELAN4",
     "ADown",
     "SPPELAN",
