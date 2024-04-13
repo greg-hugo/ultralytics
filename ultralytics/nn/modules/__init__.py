@@ -35,8 +35,6 @@ from .block import (
     MobileOne,
     MobileOneStack,
     C3x,
-    CBFuse,
-    CBLinear,
     GhostBottleneck,
     HGBlock,
     HGStem,
@@ -141,7 +139,4 @@ __all__ = (
     "RepNCSPELAN4",
     "ADown",
     "SPPELAN",
-    "CBFuse",
-    "CBLinear",
-    "Silence",
 )
