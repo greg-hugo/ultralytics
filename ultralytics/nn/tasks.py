@@ -25,8 +25,6 @@ from ultralytics.nn.modules import (
     C2fAttn,
     C3Ghost,
     C3x,
-    CBFuse,
-    CBLinear,
     Classify,
     Concat,
     Conv,
@@ -965,8 +963,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c2 = args[0]
             c1 = ch[f]
             args = [c1, c2, *args[1:]]
-        elif m is CBFuse:
-            c2 = ch[f[-1]]
         else:
             c2 = ch[f]
         m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
