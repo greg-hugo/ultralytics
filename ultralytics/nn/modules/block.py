@@ -23,8 +23,6 @@ __all__ = (
     "C2fMobileOne",
     "C2fAttn",
     "ImagePoolingAttn",
-    "ContrastiveHead",
-    "BNContrastiveHead",
     "C3x",
     "C3TR",
     "C3Ghost",
@@ -42,9 +40,7 @@ __all__ = (
     "RepNCSPELAN4",
     "ADown",
     "SPPELAN",
-    "CBFuse",
-    "CBLinear",
-    "Silence",
+    "SPPFMobileOne",
 )
 
 
@@ -535,6 +531,127 @@ class C2fAttn(nn.Module):
         x = self.depthwise_separable(x)
         return x
 
+
+class MobileOne(nn.Module):
+    """ MobileOne Model
+
+        Pytorch implementation of `An Improved One millisecond Mobile Backbone` -
+        https://arxiv.org/pdf/2206.04040.pdf
+    """
+    def __init__(self,
+                 in_channel: int,
+                 out_channel: int,
+                 kernel: int = 1,
+                 stride: int = 1,
+                 act: bool = True,
+                 inference_mode: bool = False,
+                 use_se: bool = False,
+                 num_conv_branches: int = 4) -> None:
+        """ Construct MobileOne model.
+
+        :param num_blocks_per_stage: List of number of blocks per stage.
+        :param num_classes: Number of classes in the dataset.
+        :param width_multipliers: List of width multiplier for blocks in a stage.
+        :param inference_mode: If True, instantiates model in inference mode.
+        :param use_se: Whether to use SE-ReLU activations.
+        :param num_conv_branches: Number of linear conv branches.
+        """
+        super().__init__()
+        self.inference_mode = inference_mode
+        self.num_conv_branches = num_conv_branches
+        self.act = act
+
+        blocks = list()
+        # Build stages
+        blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=in_channel,
+                                         kernel_size=kernel,
+                                         stride=stride,
+                                         padding=kernel//2,
+                                         groups=in_channel,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches,
+                                         act=self.act))
+        # Pointwise conv
+        blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=out_channel,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         groups=1,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches,
+                                         act=self.act))
+        
+        self.depthwise_separable = nn.Sequential(*blocks)
+
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """ Apply forward pass. """
+        x = self.depthwise_separable(x)
+        return x
+
+class MobileOneStack(nn.Module):
+    """ MobileOne Model
+
+        Pytorch implementation of `An Improved One millisecond Mobile Backbone` -
+        https://arxiv.org/pdf/2206.04040.pdf
+    """
+    def __init__(self,
+                 in_channel: int,
+                 out_channel: int,
+                 num_blocks: int = 1,
+                 inference_mode: bool = False,
+                 use_se: bool = False,
+                 num_conv_branches: int = 1) -> None:
+        """ Construct MobileOne model.
+
+        :param num_blocks_per_stage: List of number of blocks per stage.
+        :param num_classes: Number of classes in the dataset.
+        :param width_multipliers: List of width multiplier for blocks in a stage.
+        :param inference_mode: If True, instantiates model in inference mode.
+        :param use_se: Whether to use SE-ReLU activations.
+        :param num_conv_branches: Number of linear conv branches.
+        """
+        super().__init__()
+        self.inference_mode = inference_mode
+        self.num_conv_branches = num_conv_branches
+
+        strides = [2] + [1]*(num_blocks-1)
+        blocks = list()
+        
+        for s in strides:
+            # Depthwise conv
+            blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=in_channel,
+                                         kernel_size=3,
+                                         stride=s,
+                                         padding=1,
+                                         groups=in_channel,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches))
+            # Pointwise conv
+            blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=out_channel,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         groups=1,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches))
+            in_channel = out_channel
+        
+        self.depthwise_separable = nn.Sequential(*blocks)
+
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """ Apply forward pass. """
+        x = self.depthwise_separable(x)
+        return x
 class CrossFusion(nn.Module):
     def __init__(self,
                  inlist,
