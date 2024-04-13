@@ -789,25 +789,21 @@ class OctMobileOne(nn.Module):
              
                     
         self.outbranch = len(alpha)
-        self.c = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((3 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
-        self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
-        self.attn = MaxSigmoidAttnBlock(self.c, self.c, gc=gc, ec=ec, nh=nh)
 
-    def forward(self, x, guide):
-        """Forward pass through C2f layer."""
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        y.append(self.attn(y[-1], guide))
-        return self.cv2(torch.cat(y, 1))
+    def forward(self, xset):
+        if isinstance(xset, torch.Tensor):
+            xset = [
+                xset,
+            ]
+        yset = []
+        for i in range(self.outbranch):
+            if xset[i] is not None:
+                yset.append(self.mobileone[i](
+                    xset[i]))
+            else:
+                yset.append(None)
 
-    def forward_split(self, x, guide):
-        """Forward pass using split() instead of chunk()."""
-        y = list(self.cv1(x).split((self.c, self.c), 1))
-        y.extend(m(y[-1]) for m in self.m)
-        y.append(self.attn(y[-1], guide))
-        return self.cv2(torch.cat(y, 1))
+        return yset
 
 
 class ImagePoolingAttn(nn.Module):
