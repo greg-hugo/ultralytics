@@ -27,7 +27,6 @@ from .block import (
     SPPELAN,
     SPPF,
     ADown,
-    BNContrastiveHead,
     Bottleneck,
     BottleneckCSP,
     C2f,
@@ -38,7 +37,6 @@ from .block import (
     C3x,
     CBFuse,
     CBLinear,
-    ContrastiveHead,
     GhostBottleneck,
     HGBlock,
     HGStem,
@@ -53,7 +51,6 @@ from .block import (
     SPPFMobileOne,
     CrossFusionMobileOne,
     C2fMobileOne,
-    Silence,
 )
 from .conv import (
     CBAM,
