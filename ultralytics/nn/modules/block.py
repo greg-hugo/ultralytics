@@ -498,6 +498,180 @@ class C2fAttn(nn.Module):
         expansion.
         """
         super().__init__()
+        self.inference_mode = inference_mode
+        self.num_conv_branches = num_conv_branches
+
+        strides = [2] + [1]*(num_blocks-1)
+        blocks = list()
+        
+        for s in strides:
+            # Depthwise conv
+            blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=in_channel,
+                                         kernel_size=3,
+                                         stride=s,
+                                         padding=1,
+                                         groups=in_channel,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches))
+            # Pointwise conv
+            blocks.append(MobileOneBlock(in_channels=in_channel,
+                                         out_channels=out_channel,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         groups=1,
+                                         inference_mode=self.inference_mode,
+                                         use_se=use_se,
+                                         num_conv_branches=self.num_conv_branches))
+            in_channel = out_channel
+        
+        self.depthwise_separable = nn.Sequential(*blocks)
+
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """ Apply forward pass. """
+        x = self.depthwise_separable(x)
+        return x
+
+class CrossFusion(nn.Module):
+    def __init__(self,
+                 inlist,
+                 outlist,
+                 stride=1,
+                 first=False,
+                 n=1):
+        super(CrossFusion, self).__init__()
+        ninput = int(round(sum(inlist)))
+        noutput = int(round(sum(outlist)))
+        alpha_in = np.divide(inlist, inlist[0])
+        alpha_out = np.divide(outlist, outlist[0])
+        alpha_in = alpha_in.tolist()
+        alpha_out = alpha_out.tolist()
+        self.first = first
+        if self.first or stride == 2:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=3,
+                                      padding=1,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=stride)
+        else:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=1,
+                                      padding=0,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=1)
+
+        self.c3 = OctC3(noutput,
+                         noutput,
+                         n=n,
+                         alpha=alpha_out)
+    def forward(self, x):
+        output = self.conv1x1(x)
+        output = self.c3(output)
+        return output
+
+
+class CrossFusionMobileOne(nn.Module):
+    def __init__(self,
+                 inlist,
+                 outlist,
+                 stride=1,
+                 first=False,
+                 n=1):
+        super(CrossFusionMobileOne, self).__init__()
+        ninput = int(round(sum(inlist)))
+        noutput = int(round(sum(outlist)))
+        alpha_in = np.divide(inlist, inlist[0])
+        alpha_out = np.divide(outlist, outlist[0])
+        alpha_in = alpha_in.tolist()
+        alpha_out = alpha_out.tolist()
+        self.first = first
+        if self.first or stride == 2:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=3,
+                                      padding=1,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=stride)
+        else:
+            self.conv1x1 = gOctaveCBR(ninput,
+                                      noutput,
+                                      kernel_size=1,
+                                      padding=0,
+                                      alpha_in=alpha_in,
+                                      alpha_out=alpha_out,
+                                      stride=1)
+
+        self.mobileone = OctMobileOne(noutput,
+                         noutput,
+                         alpha=alpha_out)
+    def forward(self, x):
+        output = self.conv1x1(x)
+        output = self.mobileone(output)
+        return output
+
+class OctC3(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 n=1,
+                 alpha=[0.5, 0.5]):
+        super(OctC3, self).__init__()
+        self.sum = int(round(sum(alpha)))
+        self.c3 = nn.ModuleList()
+        for i in range(len(alpha)):
+            if int(round(in_channels * alpha[i] / self.sum)) >= 1:
+                self.c3.append(
+                    C3(int(round(in_channels * alpha[i] / self.sum)),
+                              int(round(out_channels * alpha[i] / self.sum)),
+                              n=n,
+                              shortcut=False))
+            else:
+                self.c3.append(None)
+             
+                    
+        self.outbranch = len(alpha)
+
+    def forward(self, xset):
+        if isinstance(xset, torch.Tensor):
+            xset = [
+                xset,
+            ]
+        yset = []
+        for i in range(self.outbranch):
+            if xset[i] is not None:
+                yset.append(self.c3[i](
+                    xset[i]))
+            else:
+                yset.append(None)
+
+        return yset
+
+class OctMobileOne(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 alpha=[0.5, 0.5]):
+        super(OctMobileOne, self).__init__()
+        self.sum = int(round(sum(alpha)))
+        self.mobileone = nn.ModuleList()
+        for i in range(len(alpha)):
+            if int(round(in_channels * alpha[i] / self.sum)) >= 1:
+                self.mobileone.append(
+                    MobileOne(int(round(in_channels * alpha[i] / self.sum)),
+                              int(round(out_channels * alpha[i] / self.sum))))
+            else:
+                self.mobileone.append(None)
+             
+                    
+        self.outbranch = len(alpha)
         self.c = int(c2 * e)  # hidden channels
         self.cv1 = Conv(c1, 2 * self.c, 1, 1)
         self.cv2 = Conv((3 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
@@ -525,111 +699,11 @@ class ImagePoolingAttn(nn.Module):
     def __init__(self, ec=256, ch=(), ct=512, nh=8, k=3, scale=False):
         """Initializes ImagePoolingAttn with specified arguments."""
         super().__init__()
-
-        nf = len(ch)
-        self.query = nn.Sequential(nn.LayerNorm(ct), nn.Linear(ct, ec))
-        self.key = nn.Sequential(nn.LayerNorm(ec), nn.Linear(ec, ec))
-        self.value = nn.Sequential(nn.LayerNorm(ec), nn.Linear(ec, ec))
-        self.proj = nn.Linear(ec, ct)
-        self.scale = nn.Parameter(torch.tensor([0.0]), requires_grad=True) if scale else 1.0
-        self.projections = nn.ModuleList([nn.Conv2d(in_channels, ec, kernel_size=1) for in_channels in ch])
-        self.im_pools = nn.ModuleList([nn.AdaptiveMaxPool2d((k, k)) for _ in range(nf)])
-        self.ec = ec
-        self.nh = nh
-        self.nf = nf
-        self.hc = ec // nh
-        self.k = k
-
-    def forward(self, x, text):
-        """Executes attention mechanism on input tensor x and guide tensor."""
-        bs = x[0].shape[0]
-        assert len(x) == self.nf
-        num_patches = self.k**2
-        x = [pool(proj(x)).view(bs, -1, num_patches) for (x, proj, pool) in zip(x, self.projections, self.im_pools)]
-        x = torch.cat(x, dim=-1).transpose(1, 2)
-        q = self.query(text)
-        k = self.key(x)
-        v = self.value(x)
-
-        # q = q.reshape(1, text.shape[1], self.nh, self.hc).repeat(bs, 1, 1, 1)
-        q = q.reshape(bs, -1, self.nh, self.hc)
-        k = k.reshape(bs, -1, self.nh, self.hc)
-        v = v.reshape(bs, -1, self.nh, self.hc)
-
-        aw = torch.einsum("bnmc,bkmc->bmnk", q, k)
-        aw = aw / (self.hc**0.5)
-        aw = F.softmax(aw, dim=-1)
-
-        x = torch.einsum("bmnk,bkmc->bnmc", aw, v)
-        x = self.proj(x.reshape(bs, -1, self.ec))
-        return x * self.scale + text
-
-
-class ContrastiveHead(nn.Module):
-    """Contrastive Head for YOLO-World compute the region-text scores according to the similarity between image and text
-    features.
-    """
-
-    def __init__(self):
-        """Initializes ContrastiveHead with specified region-text similarity parameters."""
-        super().__init__()
-        # NOTE: use -10.0 to keep the init cls loss consistency with other losses
-        self.bias = nn.Parameter(torch.tensor([-10.0]))
-        self.logit_scale = nn.Parameter(torch.ones([]) * torch.tensor(1 / 0.07).log())
-
-    def forward(self, x, w):
-        """Forward function of contrastive learning."""
-        x = F.normalize(x, dim=1, p=2)
-        w = F.normalize(w, dim=-1, p=2)
-        x = torch.einsum("bchw,bkc->bkhw", x, w)
-        return x * self.logit_scale.exp() + self.bias
-
-
-class BNContrastiveHead(nn.Module):
-    """
-    Batch Norm Contrastive Head for YOLO-World using batch norm instead of l2-normalization.
-
-    Args:
-        embed_dims (int): Embed dimensions of text and image features.
-    """
-
-    def __init__(self, embed_dims: int):
-        """Initialize ContrastiveHead with region-text similarity parameters."""
-        super().__init__()
-        self.norm = nn.BatchNorm2d(embed_dims)
-        # NOTE: use -10.0 to keep the init cls loss consistency with other losses
-        self.bias = nn.Parameter(torch.tensor([-10.0]))
-        # use -1.0 is more stable
-        self.logit_scale = nn.Parameter(-1.0 * torch.ones([]))
-
-    def forward(self, x, w):
-        """Forward function of contrastive learning."""
-        x = self.norm(x)
-        w = F.normalize(w, dim=-1, p=2)
-        x = torch.einsum("bchw,bkc->bkhw", x, w)
-        return x * self.logit_scale.exp() + self.bias
-
-
-class RepBottleneck(Bottleneck):
-    """Rep bottleneck."""
-
-    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
-        """Initializes a RepBottleneck module with customizable in/out channels, shortcut option, groups and expansion
-        ratio.
-        """
-        super().__init__(c1, c2, shortcut, g, k, e)
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = RepConv(c1, c_, k[0], 1)
-
-
-class RepCSP(C3):
-    """Rep CSP Bottleneck with 3 convolutions."""
-
-    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
-        """Initializes RepCSP layer with given channels, repetitions, shortcut, groups and expansion ratio."""
-        super().__init__(c1, c2, n, shortcut, g, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.m = nn.Sequential(*(RepBottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)  # optional act=FReLU(c2)
+        self.m = nn.Sequential(*(RepNBottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
 
 
 class RepNCSPELAN4(nn.Module):
@@ -696,21 +770,11 @@ class SPPELAN(nn.Module):
         y.extend(m(y[-1]) for m in [self.cv2, self.cv3, self.cv4])
         return self.cv5(torch.cat(y, 1))
 
-
-class Silence(nn.Module):
-    """Silence."""
-
-    def __init__(self):
-        """Initializes the Silence module."""
-        super(Silence, self).__init__()
-
-    def forward(self, x):
-        """Forward pass through Silence layer."""
-        return x
-
-
-class CBLinear(nn.Module):
-    """CBLinear."""
+class RepConvN(nn.Module):
+    """RepConv is a basic rep-style block, including training and deploy status
+    This code is based on https://github.com/DingXiaoH/RepVGG/blob/main/repvgg.py
+    """
+    default_act = nn.SiLU()  # default activation
 
     def __init__(self, c1, c2s, k=1, s=1, p=None, g=1):
         """Initializes the CBLinear module, passing inputs unchanged."""
@@ -719,22 +783,79 @@ class CBLinear(nn.Module):
         self.conv = nn.Conv2d(c1, sum(c2s), k, s, autopad(k, p), groups=g, bias=True)
 
     def forward(self, x):
-        """Forward pass through CBLinear layer."""
-        outs = self.conv(x).split(self.c2s, dim=1)
-        return outs
+        """Forward process"""
+        id_out = 0 if self.bn is None else self.bn(x)
+        return self.act(self.conv1(x) + self.conv2(x) + id_out)
 
+    def get_equivalent_kernel_bias(self):
+        kernel3x3, bias3x3 = self._fuse_bn_tensor(self.conv1)
+        kernel1x1, bias1x1 = self._fuse_bn_tensor(self.conv2)
+        kernelid, biasid = self._fuse_bn_tensor(self.bn)
+        return kernel3x3 + self._pad_1x1_to_3x3_tensor(kernel1x1) + kernelid, bias3x3 + bias1x1 + biasid
 
-class CBFuse(nn.Module):
-    """CBFuse."""
+    def _avg_to_3x3_tensor(self, avgp):
+        channels = self.c1
+        groups = self.g
+        kernel_size = avgp.kernel_size
+        input_dim = channels // groups
+        k = torch.zeros((channels, input_dim, kernel_size, kernel_size))
+        k[np.arange(channels), np.tile(np.arange(input_dim), groups), :, :] = 1.0 / kernel_size ** 2
+        return k
 
-    def __init__(self, idx):
-        """Initializes CBFuse module with layer index for selective feature fusion."""
-        super(CBFuse, self).__init__()
-        self.idx = idx
+    def _pad_1x1_to_3x3_tensor(self, kernel1x1):
+        if kernel1x1 is None:
+            return 0
+        else:
+            return torch.nn.functional.pad(kernel1x1, [1, 1, 1, 1])
 
-    def forward(self, xs):
-        """Forward pass through CBFuse layer."""
-        target_size = xs[-1].shape[2:]
-        res = [F.interpolate(x[self.idx[i]], size=target_size, mode="nearest") for i, x in enumerate(xs[:-1])]
-        out = torch.sum(torch.stack(res + xs[-1:]), dim=0)
-        return out
+    def _fuse_bn_tensor(self, branch):
+        if branch is None:
+            return 0, 0
+        if isinstance(branch, Conv):
+            kernel = branch.conv.weight
+            running_mean = branch.bn.running_mean
+            running_var = branch.bn.running_var
+            gamma = branch.bn.weight
+            beta = branch.bn.bias
+            eps = branch.bn.eps
+        elif isinstance(branch, nn.BatchNorm2d):
+            if not hasattr(self, 'id_tensor'):
+                input_dim = self.c1 // self.g
+                kernel_value = np.zeros((self.c1, input_dim, 3, 3), dtype=np.float32)
+                for i in range(self.c1):
+                    kernel_value[i, i % input_dim, 1, 1] = 1
+                self.id_tensor = torch.from_numpy(kernel_value).to(branch.weight.device)
+            kernel = self.id_tensor
+            running_mean = branch.running_mean
+            running_var = branch.running_var
+            gamma = branch.weight
+            beta = branch.bias
+            eps = branch.eps
+        std = (running_var + eps).sqrt()
+        t = (gamma / std).reshape(-1, 1, 1, 1)
+        return kernel * t, beta - running_mean * gamma / std
+
+    def fuse_convs(self):
+        if hasattr(self, 'conv'):
+            return
+        kernel, bias = self.get_equivalent_kernel_bias()
+        self.conv = nn.Conv2d(in_channels=self.conv1.conv.in_channels,
+                              out_channels=self.conv1.conv.out_channels,
+                              kernel_size=self.conv1.conv.kernel_size,
+                              stride=self.conv1.conv.stride,
+                              padding=self.conv1.conv.padding,
+                              dilation=self.conv1.conv.dilation,
+                              groups=self.conv1.conv.groups,
+                              bias=True).requires_grad_(False)
+        self.conv.weight.data = kernel
+        self.conv.bias.data = bias
+        for para in self.parameters():
+            para.detach_()
+        self.__delattr__('conv1')
+        self.__delattr__('conv2')
+        if hasattr(self, 'nm'):
+            self.__delattr__('nm')
+        if hasattr(self, 'bn'):
+            self.__delattr__('bn')
+        if hasattr(self, 'id_tensor'):
+            self.__delattr__('id_tensor')
