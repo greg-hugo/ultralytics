@@ -178,9 +178,9 @@ class SPPF(nn.Module):
     def forward(self, x):
         """Forward pass through Ghost Convolution block."""
         y = [self.cv1(x)]
-        print(y)
+        print(y.shape)
         y.extend(self.m(y[-1]) for _ in range(3))
-        print(y)
+        print(y.shape)
         return self.cv2(torch.cat(y, 1))
 
 class SPPFMobileOne(nn.Module):
