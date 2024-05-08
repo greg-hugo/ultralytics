@@ -41,6 +41,8 @@ __all__ = (
     "ADown",
     "SPPELAN",
     "SPPFMobileOne",
+    "CBLinear",
+    "CBFuse"
 )
 
 
@@ -972,3 +974,33 @@ class RepConvN(nn.Module):
             self.__delattr__('bn')
         if hasattr(self, 'id_tensor'):
             self.__delattr__('id_tensor')
+
+class CBLinear(nn.Module):
+    """CBLinear."""
+
+    def __init__(self, c1, c2s, k=1, s=1, p=None, g=1):
+        """Initializes the CBLinear module, passing inputs unchanged."""
+        super(CBLinear, self).__init__()
+        self.c2s = c2s
+        self.conv = nn.Conv2d(c1, sum(c2s), k, s, autopad(k, p), groups=g, bias=True)
+
+    def forward(self, x):
+        """Forward pass through CBLinear layer."""
+        outs = self.conv(x).split(self.c2s, dim=1)
+        return outs
+
+
+class CBFuse(nn.Module):
+    """CBFuse."""
+
+    def __init__(self, idx):
+        """Initializes CBFuse module with layer index for selective feature fusion."""
+        super(CBFuse, self).__init__()
+        self.idx = idx
+
+    def forward(self, xs):
+        """Forward pass through CBFuse layer."""
+        target_size = xs[-1].shape[2:]
+        res = [F.interpolate(x[self.idx[i]], size=target_size, mode="nearest") for i, x in enumerate(xs[:-1])]
+        out = torch.sum(torch.stack(res + xs[-1:]), dim=0)
+        return out

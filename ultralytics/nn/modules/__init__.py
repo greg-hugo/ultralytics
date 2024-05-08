@@ -49,6 +49,8 @@ from .block import (
     SPPFMobileOne,
     CrossFusionMobileOne,
     C2fMobileOne,
+    CBLinear,
+    CBFuse
 )
 from .conv import (
     CBAM,
